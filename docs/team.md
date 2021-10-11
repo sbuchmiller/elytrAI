@@ -9,8 +9,8 @@ title:  Team
 ## Scott Buchmiller
 ***UCI Net ID***: sbuchmil@uci.edu
 
-## USER 2
-***UCI Net ID***: ucinetid2
+## Alec Grogan-Crane
+***UCI Net ID***: agroganc@uci.edu
 
 ## USER 3
 ***UCI Net ID***: ucinetid3
