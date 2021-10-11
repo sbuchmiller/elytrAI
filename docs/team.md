@@ -6,7 +6,7 @@ title:  Team
 # {{ page.title }}
 
 
-## USER 1
+## Scott Buchmiller
 ***UCI Net ID***: sbuchmil@uci.edu
 
 ## USER 2
