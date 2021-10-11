@@ -1,1 +1,1 @@
-# elytrAI
+# gh-skeleton
