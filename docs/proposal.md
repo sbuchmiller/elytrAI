@@ -11,7 +11,7 @@ We will then take observations as the height above the ground our agent currentl
 
 Once our agent can conisistently fly the elytra, our group may introduce additional mechanics. Currently we plan to introduce fireworks, which can be used while flying an elytra to gain a temporary speed boost. The agent will then have to learn the best time to use these fireworks to fly further.
 
-We may also introduce obstacles. The agent would then have to maximize speed while navigating around obstacles in the air.
+Possible additions for later in the project could include obstacles which the agent would have to navigate to maximize speed and distance. Also we may introduce the agent to fireworks which would allow them to gain a boost in flight speed when lit. But with only a limited number available, they would have to learn to use them sparingly and at the right time.
 
 <br>
 
