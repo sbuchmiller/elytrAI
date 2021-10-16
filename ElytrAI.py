@@ -62,6 +62,9 @@ def GetMissionXML(seed, gp, size=10):
                 <Name>elytrAI</Name>
                 <AgentStart>
                     <Placement x="0.5" y="71" z="0.5" yaw="0"/>
+                    <Inventory>
+                     <InventoryItem slot="38" type="elytra"/>
+                    </Inventory>
                 </AgentStart>
                 <AgentHandlers>
                     <DiscreteMovementCommands/>
