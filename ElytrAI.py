@@ -36,46 +36,48 @@ def GetMissionXML(seed, gp, size=10):
     return '''<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
             <Mission xmlns="http://ProjectMalmo.microsoft.com" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 
-              <About>
-                <Summary>Hello world!</Summary>
-              </About>
+                <About>
+                    <Summary>Hello world!</Summary>
+                </About>
 
             <ServerSection>
-              <ServerInitialConditions>
-                <Time>
-                    <StartTime>1000</StartTime>
-                    <AllowPassageOfTime>false</AllowPassageOfTime>
-                </Time>
-                <Weather>clear</Weather>
-              </ServerInitialConditions>
-              <ServerHandlers>
-                  <FlatWorldGenerator generatorString="3;7,44*49,73,35:1,159:4,95:13,35:13,159:11,95:10,159:14,159:6,35:6,95:6;12;"/>
-                  <DrawingDecorator>
-                    <DrawBlock x="0" y="70" z="0" type="stone"/>
-                  </DrawingDecorator>
-                  <ServerQuitFromTimeUp timeLimitMs="10000"/>
-                  <ServerQuitWhenAnyAgentFinishes/>
+                <ServerInitialConditions>
+                    <Time>
+                        <StartTime>1000</StartTime>
+                        <AllowPassageOfTime>false</AllowPassageOfTime>
+                    </Time>
+                    <Weather>clear</Weather>
+                </ServerInitialConditions>
+                <ServerHandlers>
+                      <FlatWorldGenerator generatorString="3;7,44*49,73,35:1,159:4,95:13,35:13,159:11,95:10,159:14,159:6,35:6,95:6;12;"/>
+                      <DrawingDecorator>
+                            <DrawBlock x="0" y="70" z="0" type="lapis_block"/>
+                      </DrawingDecorator>
+                      <ServerQuitFromTimeUp timeLimitMs="10000"/>
+                      <ServerQuitWhenAnyAgentFinishes/>
                 </ServerHandlers>
-              </ServerSection>
+            </ServerSection>
 
-              <AgentSection mode="Creative">
+            <AgentSection mode="Survival">
                 <Name>elytrAI</Name>
                 <AgentStart>
                     <Placement x="0.5" y="71" z="0.5" yaw="0"/>
                     <Inventory>
-                     <InventoryItem slot="38" type="elytra"/>
+                        <InventoryItem slot="38" type="elytra"/>
                     </Inventory>
                 </AgentStart>
                 <AgentHandlers>
-                    <DiscreteMovementCommands/>
+                    <HumanLevelCommands/>
+                    <AbsoluteMovementCommands/>
+                    <InventoryCommands/>
                     <ObservationFromGrid>
-                      <Grid name="floorAll">
-                        <min x="-10" y="-1" z="-10"/>
-                        <max x="10" y="-1" z="10"/>
-                      </Grid>
-                  </ObservationFromGrid>
+                        <Grid name="floorAll">
+                            <min x="-10" y="-1" z="-10"/>
+                            <max x="10" y="-1" z="10"/>
+                        </Grid>
+                    </ObservationFromGrid>
                 </AgentHandlers>
-              </AgentSection>
+            </AgentSection>
             </Mission>'''
 
 def load_grid(world_state):
@@ -121,9 +123,9 @@ else:
     num_repeats = 10
 
 for i in range(num_repeats):
-    size = int(6 + 0.5*i)
+    size = int(6 + 0.5 * i)
     print("Size of maze:", size)
-    my_mission = MalmoPython.MissionSpec(GetMissionXML("0", 0.4 + float(i/20.0), size), True)
+    my_mission = MalmoPython.MissionSpec(GetMissionXML("0", 0.4 + float(i / 20.0), size), True)
     my_mission_record = MalmoPython.MissionRecordSpec()
     my_mission.requestVideo(800, 500)
     my_mission.setViewpoint(1)
@@ -161,13 +163,38 @@ for i in range(num_repeats):
     #put calls to other functions here
 
 
-    # Loop until mission ends:
+    # Action loop:
     action_index = 0
+    initial_jump_complete = False
     while world_state.is_mission_running:
-        #sys.stdout.write(".")
-        time.sleep(0.1)
 
+        # Tells agent to jump forward off starter platform
+        if not initial_jump_complete:
+            agent_host.sendCommand("forward 1")
+            time.sleep(.1)
+            agent_host.sendCommand("jump 1")
+            time.sleep(.1)
+            agent_host.sendCommand("jump 0")
+            agent_host.sendCommand("forward 0")
+            time.sleep(0.3)
+            agent_host.sendCommand("jump 1")
+            time.sleep(.1)
+            agent_host.sendCommand("jump 0")
+            initial_jump_complete = True
+
+        # Some example Yaw commands
+        agent_host.sendCommand("setYaw 0")
+        time.sleep(0.3)
+        agent_host.sendCommand("setYaw -50")
+        time.sleep(0.3)
+        agent_host.sendCommand("setYaw 60")
+
+        """
+        Stuff below this is probably not needed anymore but I don't want to delete yet 
+        just in case lol.
+        """
         # Sending the next commend from the action list -- found using the Dijkstra algo.
+        action_list = []
         if action_index >= len(action_list):
             print("Error:", "out of actions, but mission has not ended!")
             time.sleep(2)
