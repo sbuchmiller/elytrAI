@@ -25,21 +25,40 @@ class elytraFlyer(gym.env):
     def __init__(self,degreeChange=5):
         self.numObservations = 6
         self.actionList = self.getPotentialActions(degreeChange)
+        
         #RLlib params
         self.actionSpace = Discrete(len(self.action_dict))
         self.observationSpace = Box(0,360, shape=(self.numObservations,), dtype=np.float32)
 
 
         #agent parameters
-        lastx = 0
-        lasty = 0
-        lastz = 0
-        xSpeed = 0
-        ySpeed = 0
-        zSpeed = 0
+        self.lastx = 0
+        self.lasty = 0
+        self.lastz = 0
+        self.xvelocity = 0
+        self.yvelocity = 0
+        self.zvelocity = 0
+        self.episodeStep = 0
+        self.episodeReturn = 0
+        self.returns = []
+        self.steps = []
+
+    def reset(self):
+        '''
+            clear all per-episode variables and reset world for next episode
+        '''
+
+    def step(self, action):
+
+        #take observation
+
+        #choose action
+
+        #get reward
+
+        #check if mission ended
 
 
-    def step(self):
         return ()
 
 
@@ -114,6 +133,29 @@ class elytraFlyer(gym.env):
                 grid = observations.get(u'floorAll', 0)
                 break
         return grid
+
+    def log_returns(self):
+        """
+        Log the current returns as a graph and text file
+
+        Args:
+            steps (list): list of global steps after each episode
+            returns (list): list of total return of each episode
+        """
+        try:
+            box = np.ones(self.log_frequency) / self.log_frequency
+            returns_smooth = np.convolve(self.returns[1:], box, mode='same')
+            plt.clf()
+            plt.plot(self.steps[1:], returns_smooth)
+            plt.title('Diamond Collector')
+            plt.ylabel('Return')
+            plt.xlabel('Steps')
+            plt.savefig('returns.png')
+            with open('returns.txt', 'w') as f:
+                for step, value in zip(self.steps[1:], self.returns[1:]):
+                    f.write("{}\t{}\n".format(step, value)) 
+        except:
+            print("unable to log results")
 
     def getPotentialActions(self, degreeChange = 5):
         '''
