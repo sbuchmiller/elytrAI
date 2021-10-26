@@ -47,10 +47,22 @@ class elytraFlyer(gym.env):
         self.episodes = []
         self.flightDistances = []
 
+
     def reset(self):
         '''
             clear all per-episode variables and reset world for next episode
         '''
+        #resets malmo world to xml file
+        world_state = self.init_malmo()
+
+        #logs episode number and returns
+        self.returns.append(self.episode_return)
+        currentStep = self.steps[-1] if len(self.steps) > 0 else 0
+        self.steps.append(currentStep + self.episodeStep)
+        self.episodeReturn = 0
+        self.episodeStep = 0
+        self.clearObservationVariables()
+
 
     def step(self, action):
 
@@ -151,7 +163,7 @@ class elytraFlyer(gym.env):
             returns_smooth = np.convolve(self.returns[1:], box, mode='same')
             plt.clf()
             plt.plot(self.steps[1:], returns_smooth)
-            plt.title('Elytrai Flight Distance')
+            plt.title('Elytrai Flight Rewards')
             plt.ylabel('Return')
             plt.xlabel('Steps')
             plt.savefig('returns.png')
@@ -159,7 +171,22 @@ class elytraFlyer(gym.env):
                 for step, value in zip(self.steps[1:], self.returns[1:]):
                     f.write("{}\t{}\n".format(step, value)) 
         except:
-            print("unable to log results")
+            print("unable to log reward results")
+
+        try:
+            box = np.ones(self.log_frequency) / self.log_frequency
+            returns_smooth = np.convolve(self.flightDistances[1:], box, mode='same')
+            plt.clf()
+            plt.plot(self.episodes[1:], returns_smooth)
+            plt.title('Elytrai Flight Rewards')
+            plt.ylabel('Distance')
+            plt.xlabel('Episodes')
+            plt.savefig('DistanceFlown.png')
+            with open('DistanceFlown.txt', 'w') as f:
+                for step, value in zip(self.episodes[1:], self.flightDistances[1:]):
+                    f.write("{}\t{}\n".format(step, value)) 
+        except:
+            print("unable to log flight distance results")
 
     def getPotentialActions(self, degreeChange = 5):
         '''
@@ -171,6 +198,17 @@ class elytraFlyer(gym.env):
             for j in range(0,360,degreeChange):
                 out.append[(f"setYaw {i}",f"setPitch {j}")]
         return out
+
+    def clearObservationVariables(self):
+        '''
+        sets all temp observation variables(lastx, lasty, lastz, x,y,z velocity) to 0
+        '''
+        self.lastx = 0
+        self.lasty = 0
+        self.lastz = 0
+        self.xvelocity = 0
+        self.yvelocity = 0
+        self.zvelocity = 0
 
 
 
