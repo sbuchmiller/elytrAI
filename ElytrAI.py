@@ -25,10 +25,10 @@ class elytraFlyer(gym.env):
     def __init__(self,degreeChange=5):
         self.numObservations = 6
         self.actionList = self.getPotentialActions(degreeChange)
-        
+
         #RLlib params
-        self.actionSpace = Discrete(len(self.action_dict))
-        self.observationSpace = Box(0,360, shape=(self.numObservations,), dtype=np.float32)
+        self.action_space = Discrete(len(self.action_dict))
+        self.observation_space = Box(0,360, shape=(self.numObservations,), dtype=np.float32)
 
 
         #agent parameters
@@ -38,10 +38,14 @@ class elytraFlyer(gym.env):
         self.xvelocity = 0
         self.yvelocity = 0
         self.zvelocity = 0
+
+
         self.episodeStep = 0
         self.episodeReturn = 0
         self.returns = []
         self.steps = []
+        self.episodes = []
+        self.flightDistances = []
 
     def reset(self):
         '''
@@ -81,7 +85,7 @@ class elytraFlyer(gym.env):
                     <ServerHandlers>
                         <FlatWorldGenerator generatorString="3;7,44*49,73,35:1,159:4,95:13,35:13,159:11,95:10,159:14,159:6,35:6,95:6;12;"/>
                         <DrawingDecorator>
-                                <DrawBlock x="0" y="70" z="0" type="lapis_block"/>
+                                <DrawBlock x="0" y="100" z="0" type="lapis_block"/>
                         </DrawingDecorator>
                         <ServerQuitFromTimeUp timeLimitMs="10000"/>
                         <ServerQuitWhenAnyAgentFinishes/>
@@ -91,7 +95,7 @@ class elytraFlyer(gym.env):
                 <AgentSection mode="Survival">
                     <Name>elytrAI</Name>
                     <AgentStart>
-                        <Placement x="0.5" y="71" z="0.5" yaw="0"/>
+                        <Placement x="0.5" y="101" z="0.5" yaw="0"/>
                         <Inventory>
                             <InventoryItem slot="38" type="elytra"/>
                         </Inventory>
@@ -147,7 +151,7 @@ class elytraFlyer(gym.env):
             returns_smooth = np.convolve(self.returns[1:], box, mode='same')
             plt.clf()
             plt.plot(self.steps[1:], returns_smooth)
-            plt.title('Diamond Collector')
+            plt.title('Elytrai Flight Distance')
             plt.ylabel('Return')
             plt.xlabel('Steps')
             plt.savefig('returns.png')
