@@ -1,23 +1,6 @@
-# ------------------------------------------------------------------------------------------------
-# Copyright (c) 2016 Microsoft Corporation
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
-# associated documentation files (the "Software"), to deal in the Software without restriction,
-# including without limitation the rights to use, copy, modify, merge, publish, distribute,
-# sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in all copies or
-# substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
-# NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-# DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-# ------------------------------------------------------------------------------------------------
+#CS175 Fall 2021 Project
+#Creators: Alec Grogan-Crane, Alexandria Meng, Scott Buchmiller
 
-# Tutorial sample #7: The Maze Decorator
 
 try:
     from malmo import MalmoPython
@@ -29,80 +12,120 @@ import sys
 import time
 import json
 from priority_dict import priorityDictionary as PQ
+import matplotlib.pyplot as plt
+import numpy as np
+from numpy.random import randint
+import gym, ray
+from gym.spaces import Discrete, Box
+from ray.rllib.agents import a2c
 
 # sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # flush print output immediately
+class elytraFlyer(gym.env):
 
-def GetMissionXML(seed, gp, size=10):
-    return '''<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
-            <Mission xmlns="http://ProjectMalmo.microsoft.com" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    def __init__(self,degreeChange=5):
+        self.numObservations = 6
+        self.actionList = self.getPotentialActions(degreeChange)
+        #RLlib params
+        self.actionSpace = Discrete(len(self.action_dict))
+        self.observationSpace = Box(0,360, shape=(self.numObservations,), dtype=np.float32)
 
-                <About>
-                    <Summary>Hello world!</Summary>
-                </About>
 
-            <ServerSection>
-                <ServerInitialConditions>
-                    <Time>
-                        <StartTime>1000</StartTime>
-                        <AllowPassageOfTime>false</AllowPassageOfTime>
-                    </Time>
-                    <Weather>clear</Weather>
-                </ServerInitialConditions>
-                <ServerHandlers>
-                      <FlatWorldGenerator generatorString="3;7,44*49,73,35:1,159:4,95:13,35:13,159:11,95:10,159:14,159:6,35:6,95:6;12;"/>
-                      <DrawingDecorator>
-                            <DrawBlock x="0" y="70" z="0" type="lapis_block"/>
-                      </DrawingDecorator>
-                      <ServerQuitFromTimeUp timeLimitMs="10000"/>
-                      <ServerQuitWhenAnyAgentFinishes/>
-                </ServerHandlers>
-            </ServerSection>
+        #agent parameters
+        lastx = 0
+        lasty = 0
+        lastz = 0
+        xSpeed = 0
+        ySpeed = 0
+        zSpeed = 0
 
-            <AgentSection mode="Survival">
-                <Name>elytrAI</Name>
-                <AgentStart>
-                    <Placement x="0.5" y="71" z="0.5" yaw="0"/>
-                    <Inventory>
-                        <InventoryItem slot="38" type="elytra"/>
-                    </Inventory>
-                </AgentStart>
-                <AgentHandlers>
-                    <HumanLevelCommands/>
-                    <AbsoluteMovementCommands/>
-                    <InventoryCommands/>
-                    <ObservationFromGrid>
-                        <Grid name="floorAll">
-                            <min x="-10" y="-1" z="-10"/>
-                            <max x="10" y="-1" z="10"/>
-                        </Grid>
-                    </ObservationFromGrid>
-                </AgentHandlers>
-            </AgentSection>
-            </Mission>'''
 
-def load_grid(world_state):
-    """
-    Used the agent observation API to get a 21 X 21 grid box around the agent (the agent is in the middle).
+    def step(self):
+        return ()
 
-    Args
-        world_state:    <object>    current agent world state
 
-    Returns
-        grid:   <list>  the world grid blocks represented as a list of blocks (see Tutorial.pdf)
-    """
-    while world_state.is_mission_running:
-        #sys.stdout.write(".")
-        time.sleep(0.1)
-        world_state = agent_host.getWorldState()
-        if len(world_state.errors) > 0:
-            raise AssertionError('Could not load grid.')
+    def GetMissionXML(seed, gp, size=10):
+        return '''<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+                <Mission xmlns="http://ProjectMalmo.microsoft.com" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 
-        if world_state.number_of_observations_since_last_state > 0:
-            msg = world_state.observations[-1].text
-            observations = json.loads(msg)
-            grid = observations.get(u'floorAll', 0)
-            break
-    return grid
+                    <About>
+                        <Summary>Hello world!</Summary>
+                    </About>
+
+                <ServerSection>
+                    <ServerInitialConditions>
+                        <Time>
+                            <StartTime>1000</StartTime>
+                            <AllowPassageOfTime>false</AllowPassageOfTime>
+                        </Time>
+                        <Weather>clear</Weather>
+                    </ServerInitialConditions>
+                    <ServerHandlers>
+                        <FlatWorldGenerator generatorString="3;7,44*49,73,35:1,159:4,95:13,35:13,159:11,95:10,159:14,159:6,35:6,95:6;12;"/>
+                        <DrawingDecorator>
+                                <DrawBlock x="0" y="70" z="0" type="lapis_block"/>
+                        </DrawingDecorator>
+                        <ServerQuitFromTimeUp timeLimitMs="10000"/>
+                        <ServerQuitWhenAnyAgentFinishes/>
+                    </ServerHandlers>
+                </ServerSection>
+
+                <AgentSection mode="Survival">
+                    <Name>elytrAI</Name>
+                    <AgentStart>
+                        <Placement x="0.5" y="71" z="0.5" yaw="0"/>
+                        <Inventory>
+                            <InventoryItem slot="38" type="elytra"/>
+                        </Inventory>
+                    </AgentStart>
+                    <AgentHandlers>
+                        <HumanLevelCommands/>
+                        <AbsoluteMovementCommands/>
+                        <InventoryCommands/>
+                        <ObservationFromGrid>
+                            <Grid name="floorAll">
+                                <min x="-10" y="-1" z="-10"/>
+                                <max x="10" y="-1" z="10"/>
+                            </Grid>
+                        </ObservationFromGrid>
+                    </AgentHandlers>
+                </AgentSection>
+                </Mission>'''
+
+    def load_grid(world_state):
+        """
+        Used the agent observation API to get a 21 X 21 grid box around the agent (the agent is in the middle).
+
+        Args
+            world_state:    <object>    current agent world state
+
+        Returns
+            grid:   <list>  the world grid blocks represented as a list of blocks (see Tutorial.pdf)
+        """
+        while world_state.is_mission_running:
+            #sys.stdout.write(".")
+            time.sleep(0.1)
+            world_state = agent_host.getWorldState()
+            if len(world_state.errors) > 0:
+                raise AssertionError('Could not load grid.')
+
+            if world_state.number_of_observations_since_last_state > 0:
+                msg = world_state.observations[-1].text
+                observations = json.loads(msg)
+                grid = observations.get(u'floorAll', 0)
+                break
+        return grid
+
+    def getPotentialActions(self, degreeChange = 5):
+        '''
+            degreeChange: how many degrees we are allowed to change per angle, smaller degree = more angles
+            return: [(str,str)] of camera angles that the agent will be able to pick from as a discrete actions space
+        '''
+        out = []
+        for i in range(0,360,degreeChange):
+            for j in range(0,360,degreeChange):
+                out.append[(f"setYaw {i}",f"setPitch {j}")]
+        return out
+
 
 
 # Create default Malmo objects:
