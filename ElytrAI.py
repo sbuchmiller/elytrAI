@@ -150,6 +150,39 @@ class elytraFlyer(gym.env):
                 break
         return grid
 
+
+    def init_malmo(self):
+        """
+        Initialize new malmo mission.
+        """
+        my_mission = MalmoPython.MissionSpec(self.get_mission_xml(), True)
+        my_mission_record = MalmoPython.MissionRecordSpec()
+        my_mission.requestVideo(800, 500)
+        my_mission.setViewpoint(1)
+
+        max_retries = 3
+        my_clients = MalmoPython.ClientPool()
+        my_clients.add(MalmoPython.ClientInfo('127.0.0.1', 10000)) # add Minecraft machines here as available
+
+        for retry in range(max_retries):
+            try:
+                self.agent_host.startMission( my_mission, my_clients, my_mission_record, 0, 'Elytra Fly' )
+                break
+            except RuntimeError as e:
+                if retry == max_retries - 1:
+                    print("Error starting mission:", e)
+                    exit(1)
+                else:
+                    time.sleep(2)
+
+        world_state = self.agent_host.getWorldState()
+        while not world_state.has_mission_begun:
+            time.sleep(0.1)
+            world_state = self.agent_host.getWorldState()
+            for error in world_state.errors:
+                print("\nError:", error.text)
+        return world_state
+
     def log_returns(self):
         """
         Log the current returns as a graph and text file
@@ -210,6 +243,8 @@ class elytraFlyer(gym.env):
         self.yvelocity = 0
         self.zvelocity = 0
 
+
+if __name__ == "__main__":
 
 
 # Create default Malmo objects:
