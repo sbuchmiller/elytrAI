@@ -22,17 +22,17 @@ from ray.rllib.agents import ppo
 # from ray.rllib.agents import a2c
 
 
-# sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # flush print output immediately
-class elytraFlyer(gym.Env):
+class ElytraFlyer(gym.Env):
 
-    def __init__(self, degreeChange=5):
-        self.numObservations = 6
-        self.actionDict = self.getPotentialActions()
+    def __init__(self):
+        self.num_observations = 6
         self.log_frequency = 1
+        self.move_mult = 50
+        self.distance_reward_gamma = 0.02
 
         # RLlib params
-        self.action_space = Discrete(len(self.actionDict))
-        self.observation_space = Box(0, 1000, shape=(self.numObservations,), dtype=np.float32)
+        self.action_space = Box(-2, 2, shape=(2,), dtype=np.float32)
+        self.observation_space = Box(-1000, 1000, shape=(self.num_observations,), dtype=np.float32)
 
         # Malmo Parameters
         self.agent_host = MalmoPython.AgentHost()
@@ -52,51 +52,96 @@ class elytraFlyer(gym.Env):
         self.yvelocity = 0
         self.zvelocity = 0
 
-        self.episodeStep = 0
-        self.episodeReturn = 0
+        self.episode_step = 0
+        self.episode_return = 0
         self.returns = []
         self.steps = []
         self.episodes = []
         self.flightDistances = []
 
+        # Set NP to print decimal numbers rather than scientific notation.
+        np.set_printoptions(suppress=True)
+
     def reset(self):
         """
         Clear all per-episode variables and reset world for next episode
+
+        Returns
+            observation: <np.array> [X, Y, Z]
         """
         # resets malmo world to xml file
         world_state = self.init_malmo()
 
-        # logs episode number and returns
-        self.returns.append(self.episodeReturn)
+        # Append return value and flight distance
+        self.returns.append(self.episode_return)
+        self.flightDistances.append(self.lastz)
+
+        # Get the value of the current step
         currentStep = self.steps[-1] if len(self.steps) > 0 else 0
-        self.steps.append(currentStep + self.episodeStep)
-        self.episodeReturn = 0
-        self.episodeStep = 0
+        self.steps.append(currentStep + self.episode_step)
+
+        # Get the value of the current episode and append to the episodes list
+        if len(self.episodes) > 0:
+            currentEpisode = self.episodes[-1] + 1
+        else:
+            currentEpisode = 0
+        self.episodes.append(currentEpisode)
+
+        # Reset values of the run
+        self.episode_return = 0
+        self.episode_step = 0
         self.clearObservationVariables()
 
+        # Log (Right now I have it logging after every flight
+        # if len(self.returns) > self.log_frequency + 1 and \
+        #         len(self.returns) % self.log_frequency == 0:
+        self.log_returns()
+
+        # Get Observations
         self.obs = self.get_observation(world_state)
 
         return self.obs
 
     def step(self, action):
-        # choose action
-        print(f"Action: {action}")
+        """
+        Take an action in the environment and return the results.
 
-        # take observation
+        Args
+            action: <box> 2x1 box defining action - X and Y for where to move mouse.
+
+        Returns
+            observation: <np.array> [X, Y, Z] location
+            reward: <float> reward from taking action
+            done: <bool> indicates terminal state
+            info: <dict> dictionary of extra information
+        """
+        # Send command to the agent
+        self.agent_host.sendCommand(f"moveMouse {int(action[0] * self.move_mult)} {int(action[1] * self.move_mult)}")
+
+        # Sleep and increment the episode by one
+        time.sleep(.1)
+        self.episode_step += 1
+
+        # Take observation
         world_state = self.agent_host.getWorldState()
         for error in world_state.errors:
             print("Error:", error.text)
-        print(world_state)
         self.obs = self.get_observation(world_state)
+
+        # Check if mission ended
+        done = not world_state.is_mission_running
 
         # Get Reward
         reward = 0
+        # Get's rewards defined in XML (We have none right now)
         for r in world_state.rewards:
             reward += r.getValue()
-        self.episodeReturn += reward
 
-        # check if mission ended
-        done = not world_state.is_mission_running
+        # Reward for going far in the Z direction
+        reward += self.obs[2] * self.distance_reward_gamma
+
+        # add reward for this step to the episode return value.
+        self.episode_return += reward
 
         return self.obs, reward, done, dict()
 
@@ -118,9 +163,9 @@ class elytraFlyer(gym.Env):
                         <Weather>clear</Weather>
                     </ServerInitialConditions>
                     <ServerHandlers>
-                        <FlatWorldGenerator generatorString="2;57;1;"/>
+                        <FlatWorldGenerator generatorString="2;7,11;1;"/>
                         <DrawingDecorator>
-                                <DrawBlock x="0" y="100" z="0" type="lapis_block"/>
+                                <DrawBlock x="0" y="40" z="0" type="lapis_block"/>
                         </DrawingDecorator>
                         <ServerQuitWhenAnyAgentFinishes/>
                     </ServerHandlers>
@@ -129,20 +174,15 @@ class elytraFlyer(gym.Env):
                 <AgentSection mode="Survival">
                     <Name>elytrAI</Name>
                     <AgentStart>
-                        <Placement x="0.5" y="101" z="0.5" yaw="0"/>
+                        <Placement x="0.5" y="41" z="0.5" yaw="0"/>
                         <Inventory>
                             <InventoryItem slot="38" type="elytra"/>
                         </Inventory>
                     </AgentStart>
                     <AgentHandlers>
                         <HumanLevelCommands/>
-                        <AbsoluteMovementCommands/>
                         <InventoryCommands/>
                         <ObservationFromFullStats/>
-                        <ObservationFromRay/>
-                        <AgentQuitFromTouchingBlockType>
-                            <Block type="diamond_block" />
-                        </AgentQuitFromTouchingBlockType>
                         </AgentHandlers>
                 </AgentSection>
                 </Mission>
@@ -152,7 +192,10 @@ class elytraFlyer(gym.Env):
         """
         Log the current returns as a graph and text file
         """
+
+        # Log the reward scores.
         try:
+            # Create graph
             box = np.ones(self.log_frequency) / self.log_frequency
             returns_smooth = np.convolve(self.returns[1:], box, mode='same')
             plt.clf()
@@ -161,13 +204,17 @@ class elytraFlyer(gym.Env):
             plt.ylabel('Return')
             plt.xlabel('Steps')
             plt.savefig('returns.png')
+
+            # Write to TXT file
             with open('returns.txt', 'w') as f:
                 for step, value in zip(self.steps[1:], self.returns[1:]):
-                    f.write("{}\t{}\n".format(step, value)) 
+                    f.write("{}\t{}\n".format(step, value))
         except:
             print("unable to log reward results")
 
+        # Log the flight distances
         try:
+            # Create graph
             box = np.ones(self.log_frequency) / self.log_frequency
             returns_smooth = np.convolve(self.flightDistances[1:], box, mode='same')
             plt.clf()
@@ -176,9 +223,11 @@ class elytraFlyer(gym.Env):
             plt.ylabel('Distance')
             plt.xlabel('Episodes')
             plt.savefig('DistanceFlown.png')
+
+            # Write to TXT file
             with open('DistanceFlown.txt', 'w') as f:
                 for step, value in zip(self.episodes[1:], self.flightDistances[1:]):
-                    f.write("{}\t{}\n".format(step, value)) 
+                    f.write("{}\t{}\n".format(step, value))
         except:
             print("unable to log flight distance results")
 
@@ -197,7 +246,7 @@ class elytraFlyer(gym.Env):
 
         for retry in range(max_retries):
             try:
-                self.agent_host.startMission(my_mission, my_clients, my_mission_record, 0, 'Moshe')
+                self.agent_host.startMission(my_mission, my_clients, my_mission_record, 0, 'ElytraFlyer')
                 break
             except RuntimeError as e:
                 if retry == max_retries - 1:
@@ -207,9 +256,7 @@ class elytraFlyer(gym.Env):
                     time.sleep(2)
 
         world_state = self.agent_host.getWorldState()
-        print(f"init_malmo() - World State: {world_state}")
         while not world_state.has_mission_begun:
-            # sys.stdout.write(".")
             time.sleep(0.1)
             world_state = self.agent_host.getWorldState()
             for error in world_state.errors:
@@ -220,32 +267,42 @@ class elytraFlyer(gym.Env):
 
     def get_observation(self, world_state):
         """
+        Use the agent observation API to get the current X, Y, and Z values of the agent
 
+        Args
+            world_state: <object> current agent world state
+
+        Returns
+            observation: <np.array> the state observation [X, Y, Z]
         """
-        obs = np.zeros((self.numObservations,))
+        obs = np.zeros((self.num_observations,))  # Initialize zero'd obs return
+
         while world_state.is_mission_running:
             world_state = self.agent_host.getWorldState()
             if world_state.number_of_observations_since_last_state > 0:
-                # First we get the json from the observation API
+                # Get observation json
                 msg = world_state.observations[-1].text
-                observations = json.loads(msg)
-                # print(f"get_observation() - observations: {observations}")
+                jsonLoad = json.loads(msg)
+                xPos = jsonLoad['XPos']
+                yPos = jsonLoad['YPos']
+                zPos = jsonLoad['ZPos']
+
+                # calculate velocities
+                xVelocity = xPos - self.lastx
+                yVelocity = yPos - self.lasty
+                zVelocity = zPos - self.lastz
+
+                # update the self.last values
+                self.lastx = xPos
+                self.lasty = yPos
+                self.lastz = zPos
+
+                # Create obs np array and return
+                obsList = [xPos, yPos, zPos, xVelocity, yVelocity, zVelocity]
+                obs = np.array(obsList)
+                break
 
         return obs
-
-    @staticmethod
-    def getPotentialActions(degreeChange=5):
-        """
-            degreeChange: how many degrees we are allowed to change per angle, smaller degree = more angles
-            return: {0: (str,str), 1: (str, str)} of camera angles that the agent will be able to pick from
-                     as a discrete actions space
-        """
-        out = dict()
-        x = 0
-        for i in range(0, 360, degreeChange):
-            for j in range(0, 360, degreeChange):
-                out[x] = (f"setYaw {i}", f"setPitch {j}")
-        return out
 
     def clearObservationVariables(self):
         """
@@ -259,23 +316,25 @@ class elytraFlyer(gym.Env):
         self.zvelocity = 0
 
     def agentJumpOffStartingBlock(self):
+        """
+        Tells the agent to jump off the starting platform and open the elytra
+        """
         self.agent_host.sendCommand("forward 1")
-        time.sleep(.1)
+        time.sleep(.15)
         self.agent_host.sendCommand("jump 1")
         time.sleep(.1)
         self.agent_host.sendCommand("jump 0")
         self.agent_host.sendCommand("forward 0")
-        time.sleep(.5)
-        print("before jump")
+        time.sleep(1)
         self.agent_host.sendCommand("jump 1")
-        print("after jump")
-        time.sleep(.3)
+        time.sleep(.1)
         self.agent_host.sendCommand("jump 0")
+        time.sleep(.1)
 
 
 if __name__ == '__main__':
     ray.init()
-    trainer = ppo.PPOTrainer(env=elytraFlyer, config={
+    trainer = ppo.PPOTrainer(env=ElytraFlyer, config={
         'env_config': {},           # No environment parameters to configure
         'framework': 'torch',       # Use pyotrch instead of tensorflow
         'num_gpus': 0,              # We aren't using GPUs
