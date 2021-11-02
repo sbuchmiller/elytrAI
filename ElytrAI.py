@@ -227,10 +227,10 @@ class elytraFlyer(gym.Env):
             plt.title('Elytrai Flight Rewards')
             plt.ylabel('Return')
             plt.xlabel('Steps')
-            plt.savefig('returns.png')
+            plt.savefig('outputs/returns.png')
 
             # Write to TXT file
-            with open('returns.txt', 'w') as f:
+            with open('outputs/returns.txt', 'w') as f:
                 for step, value in zip(self.steps[1:], self.returns[1:]):
                     f.write("{}\t{}\n".format(step, value))
         except:
@@ -246,10 +246,10 @@ class elytraFlyer(gym.Env):
             plt.title('Elytrai Flight Rewards')
             plt.ylabel('Distance')
             plt.xlabel('Episodes')
-            plt.savefig('DistanceFlown.png')
+            plt.savefig('outputs/DistanceFlown.png')
 
             # Write to TXT file
-            with open('DistanceFlown.txt', 'w') as f:
+            with open('outputs/DistanceFlown.txt', 'w') as f:
                 for step, value in zip(self.episodes[1:], self.flightDistances[1:]):
                     f.write("{}\t{}\n".format(step, value))
         except:
