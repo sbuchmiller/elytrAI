@@ -22,17 +22,20 @@ from ray.rllib.agents import ppo
 # from ray.rllib.agents import a2c
 
 
-class ElytraFlyer(gym.Env):
+class elytraFlyer(gym.Env):
 
-    def __init__(self):
-        self.num_observations = 6
+    def __init__(self, env_config):
+        self.num_observations = 7
         self.log_frequency = 1
         self.move_mult = 50
         self.distance_reward_gamma = 0.02
+        self.velocity_reward_gamma = 0.1
+        self.damage_taken_reward_gamma = 10
+        self.pillar_frequency = 0.0035
 
         # RLlib params
         self.action_space = Box(-2, 2, shape=(2,), dtype=np.float32)
-        self.observation_space = Box(-1000, 1000, shape=(self.num_observations,), dtype=np.float32)
+        self.observation_space = Box(-10000, 10000, shape=(self.num_observations,), dtype=np.float32)
 
         # Malmo Parameters
         self.agent_host = MalmoPython.AgentHost()
@@ -51,6 +54,7 @@ class ElytraFlyer(gym.Env):
         self.xvelocity = 0
         self.yvelocity = 0
         self.zvelocity = 0
+        self.damage_taken = 0
 
         self.episode_step = 0
         self.episode_return = 0
@@ -67,7 +71,7 @@ class ElytraFlyer(gym.Env):
         Clear all per-episode variables and reset world for next episode
 
         Returns
-            observation: <np.array> [X, Y, Z]
+            observation: <np.array> [X, Y, Z, xVelo, yVelo, zVelo, BlockSightDistance]
         """
         # resets malmo world to xml file
         world_state = self.init_malmo()
@@ -110,12 +114,14 @@ class ElytraFlyer(gym.Env):
             action: <box> 2x1 box defining action - X and Y for where to move mouse.
 
         Returns
-            observation: <np.array> [X, Y, Z] location
+            observation: <np.array> [X, Y, Z, xVelo, yVelo, zVelo, BlockSightDistance] location
             reward: <float> reward from taking action
             done: <bool> indicates terminal state
             info: <dict> dictionary of extra information
         """
-        # Send command to the agent
+        # print(f"step() - action = {action}")
+
+        # Send command to move mouse
         self.agent_host.sendCommand(f"moveMouse {int(action[0] * self.move_mult)} {int(action[1] * self.move_mult)}")
 
         # Sleep and increment the episode by one
@@ -139,11 +145,24 @@ class ElytraFlyer(gym.Env):
 
         # Reward for going far in the Z direction
         reward += self.obs[2] * self.distance_reward_gamma
+        # reward += self.obs[5] * self.velocity_reward_gamma
+
+        # Punish for hitting a pillar in midflight
+        if self.obs[1] > 3:
+            reward -= self.damage_taken * self.damage_taken_reward_gamma
 
         # add reward for this step to the episode return value.
         self.episode_return += reward
 
         return self.obs, reward, done, dict()
+
+    def getPillarLocations(self, width=400, length=2000):
+        return_string = ""
+        for x in range(-1 * int(width/2), int(width/2)):
+            for z in range(length):
+                if randint(1/self.pillar_frequency) == 1:
+                    return_string += f"<DrawLine x1='{x}' y1='2' z1='{z}' x2 = '{x}' y2 = '100' z2 = '{z}' type='diamond_block'/>\n"
+        return return_string
 
 
     def GetMissionXML(self):
@@ -165,7 +184,10 @@ class ElytraFlyer(gym.Env):
                     <ServerHandlers>
                         <FlatWorldGenerator generatorString="2;7,11;1;"/>
                         <DrawingDecorator>
-                                <DrawBlock x="0" y="40" z="0" type="lapis_block"/>
+                            <DrawBlock x="0" y="90" z="0" type="lapis_block"/>
+                            ''' + \
+                                self.getPillarLocations() + '''
+                            <DrawCuboid x1="-20" y1="2" z1="1" x2="-10" y2="100" z2="30" type="air"/>
                         </DrawingDecorator>
                         <ServerQuitWhenAnyAgentFinishes/>
                     </ServerHandlers>
@@ -174,16 +196,16 @@ class ElytraFlyer(gym.Env):
                 <AgentSection mode="Survival">
                     <Name>elytrAI</Name>
                     <AgentStart>
-                        <Placement x="0.5" y="41" z="0.5" yaw="0"/>
+                        <Placement x="0.5" y="91" z="0.5" yaw="0"/>
                         <Inventory>
                             <InventoryItem slot="38" type="elytra"/>
                         </Inventory>
                     </AgentStart>
                     <AgentHandlers>
                         <HumanLevelCommands/>
-                        <InventoryCommands/>
                         <ObservationFromFullStats/>
-                        </AgentHandlers>
+                        <ObservationFromRay/>
+                    </AgentHandlers>
                 </AgentSection>
                 </Mission>
                 '''
@@ -246,7 +268,7 @@ class ElytraFlyer(gym.Env):
 
         for retry in range(max_retries):
             try:
-                self.agent_host.startMission(my_mission, my_clients, my_mission_record, 0, 'ElytraFlyer')
+                self.agent_host.startMission(my_mission, my_clients, my_mission_record, 0, 'elytraFlyer')
                 break
             except RuntimeError as e:
                 if retry == max_retries - 1:
@@ -273,7 +295,7 @@ class ElytraFlyer(gym.Env):
             world_state: <object> current agent world state
 
         Returns
-            observation: <np.array> the state observation [X, Y, Z]
+            observation: <np.array> the state observation [X, Y, Z, xVelo, yVelo, zVelo]
         """
         obs = np.zeros((self.num_observations,))  # Initialize zero'd obs return
 
@@ -283,9 +305,20 @@ class ElytraFlyer(gym.Env):
                 # Get observation json
                 msg = world_state.observations[-1].text
                 jsonLoad = json.loads(msg)
+
+                self.damage_taken = 20 - jsonLoad['Life']
+
+                # Get the distance of the block at the center of screen. -1 if no block there
+                try:
+                    blockInSightDistance = jsonLoad['LineOfSight']['distance']
+                except:
+                    blockInSightDistance = -1
+
+                # Get the X, Y, and Z positions of the agent
                 xPos = jsonLoad['XPos']
                 yPos = jsonLoad['YPos']
                 zPos = jsonLoad['ZPos']
+
 
                 # calculate velocities
                 xVelocity = xPos - self.lastx
@@ -298,7 +331,7 @@ class ElytraFlyer(gym.Env):
                 self.lastz = zPos
 
                 # Create obs np array and return
-                obsList = [xPos, yPos, zPos, xVelocity, yVelocity, zVelocity]
+                obsList = [xPos, yPos, zPos, xVelocity, yVelocity, zVelocity, blockInSightDistance]
                 obs = np.array(obsList)
                 break
 
@@ -314,6 +347,7 @@ class ElytraFlyer(gym.Env):
         self.xvelocity = 0
         self.yvelocity = 0
         self.zvelocity = 0
+        self.damage_taken = 0
 
     def agentJumpOffStartingBlock(self):
         """
@@ -334,7 +368,7 @@ class ElytraFlyer(gym.Env):
 
 if __name__ == '__main__':
     ray.init()
-    trainer = ppo.PPOTrainer(env=ElytraFlyer, config={
+    trainer = ppo.PPOTrainer(env=elytraFlyer, config={
         'env_config': {},           # No environment parameters to configure
         'framework': 'torch',       # Use pyotrch instead of tensorflow
         'num_gpus': 0,              # We aren't using GPUs
