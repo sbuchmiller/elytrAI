@@ -31,7 +31,7 @@ class elytraFlyer(gym.Env):
         self.distance_reward_gamma = 0.02
         self.velocity_reward_gamma = 0.1
         self.damage_taken_reward_gamma = 10
-        self.pillar_frequency = 0.0035
+        self.pillar_frequency = 0.005
 
         # RLlib params
         self.action_space = Box(-2, 2, shape=(2,), dtype=np.float32)
@@ -145,7 +145,7 @@ class elytraFlyer(gym.Env):
 
         # Reward for going far in the Z direction
         reward += self.obs[2] * self.distance_reward_gamma
-        # reward += self.obs[5] * self.velocity_reward_gamma
+        reward += self.obs[5] * self.velocity_reward_gamma
 
         # Punish for hitting a pillar in midflight
         if self.obs[1] > 3:
@@ -156,7 +156,7 @@ class elytraFlyer(gym.Env):
 
         return self.obs, reward, done, dict()
 
-    def getPillarLocations(self, width=400, length=2000):
+    def getPillarLocations(self, width=300, length=1000):
         return_string = ""
         for x in range(-1 * int(width/2), int(width/2)):
             for z in range(length):
@@ -184,7 +184,8 @@ class elytraFlyer(gym.Env):
                     <ServerHandlers>
                         <FlatWorldGenerator generatorString="2;7,11;1;"/>
                         <DrawingDecorator>
-                            <DrawBlock x="0" y="90" z="0" type="lapis_block"/>
+                            <DrawBlock x="0" y="60" z="0" type="lapis_block"/>
+                            <DrawCuboid x1="-150" y1="2" z1="1" x2="150" y2="100" z2="1000" type="air"/>
                             ''' + \
                                 self.getPillarLocations() + '''
                             <DrawCuboid x1="-20" y1="2" z1="1" x2="-10" y2="100" z2="30" type="air"/>
@@ -196,7 +197,7 @@ class elytraFlyer(gym.Env):
                 <AgentSection mode="Survival">
                     <Name>elytrAI</Name>
                     <AgentStart>
-                        <Placement x="0.5" y="91" z="0.5" yaw="0"/>
+                        <Placement x="0.5" y="61" z="0.5" yaw="0"/>
                         <Inventory>
                             <InventoryItem slot="38" type="elytra"/>
                         </Inventory>
