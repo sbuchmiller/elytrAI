@@ -206,6 +206,7 @@ class elytraFlyer(gym.Env):
                         <HumanLevelCommands/>
                         <ObservationFromFullStats/>
                         <ObservationFromRay/>
+                        <AgentQuitFromTimeUp timeLimitMs="180000"/>
                     </AgentHandlers>
                 </AgentSection>
                 </Mission>
