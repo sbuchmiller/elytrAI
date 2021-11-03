@@ -11,6 +11,7 @@ import os
 import sys
 import time
 import json
+import math
 from priority_dict import priorityDictionary as PQ
 import matplotlib.pyplot as plt
 import numpy as np
@@ -30,8 +31,9 @@ class elytraFlyer(gym.Env):
         self.move_mult = 50
         self.distance_reward_gamma = 0.02
         self.velocity_reward_gamma = 0.1
-        self.damage_taken_reward_gamma = 10
+        self.damage_taken_reward_gamma = 10 #original is 10
         self.pillar_frequency = 0.005
+        self.glide_reward_gamma = 0.05
 
         # RLlib params
         self.action_space = Box(-2, 2, shape=(2,), dtype=np.float32)
@@ -55,6 +57,8 @@ class elytraFlyer(gym.Env):
         self.yvelocity = 0
         self.zvelocity = 0
         self.damage_taken = 0
+        self.reward_ratio = 0
+        self.optimal_ratio = 0
 
         self.episode_step = 0
         self.episode_return = 0
@@ -62,6 +66,7 @@ class elytraFlyer(gym.Env):
         self.steps = []
         self.episodes = []
         self.flightDistances = []
+        self.recordedRatios = []
 
         # Set NP to print decimal numbers rather than scientific notation.
         np.set_printoptions(suppress=True)
@@ -69,7 +74,6 @@ class elytraFlyer(gym.Env):
     def reset(self):
         """
         Clear all per-episode variables and reset world for next episode
-
         Returns
             observation: <np.array> [X, Y, Z, xVelo, yVelo, zVelo, BlockSightDistance]
         """
@@ -91,6 +95,10 @@ class elytraFlyer(gym.Env):
             currentEpisode = 0
         self.episodes.append(currentEpisode)
 
+        #append reward ratios
+        self.recordedRatios.append(self.reward_ratio)
+        #print(self.recordedRatios)
+
         # Reset values of the run
         self.episode_return = 0
         self.episode_step = 0
@@ -109,10 +117,8 @@ class elytraFlyer(gym.Env):
     def step(self, action):
         """
         Take an action in the environment and return the results.
-
         Args
             action: <box> 2x1 box defining action - X and Y for where to move mouse.
-
         Returns
             observation: <np.array> [X, Y, Z, xVelo, yVelo, zVelo, BlockSightDistance] location
             reward: <float> reward from taking action
@@ -134,6 +140,7 @@ class elytraFlyer(gym.Env):
             print("Error:", error.text)
         self.obs = self.get_observation(world_state)
 
+
         # Check if mission ended
         done = not world_state.is_mission_running
 
@@ -146,6 +153,39 @@ class elytraFlyer(gym.Env):
         # Reward for going far in the Z direction
         reward += self.obs[2] * self.distance_reward_gamma
         reward += self.obs[5] * self.velocity_reward_gamma
+
+        # Glide slope ratio? AI flew z blocks for every y drop in altitude
+        # distance / change in altitude (61)
+        # AI flies about 2 blocks forward on average for every 1 block drop.
+
+        glide_ratio = self.obs[2] / self.obs[1]
+        #print("glide ratio is ", glide_ratio)
+        self.optimal_ratio = 2.5
+
+        # constraint on recorded ratio to not be NaN or too high (when it dies or dips straight down)
+        if not math.isnan(glide_ratio) and glide_ratio <= (self.optimal_ratio*1.5):
+            self.reward_ratio = glide_ratio
+
+        # if AI glide_ratio between 15%+/- of glide_max, reward. if less or greater than 15% of optimal_ratio, penalize
+        if self.obs[1] <= 5:
+            #print("the recorded glide ratio is ", self.reward_ratio)
+            forgiveness_range_below = self.optimal_ratio - self.optimal_ratio*0.15
+            forgiveness_range_above = self.optimal_ratio*0.15
+
+            if self.reward_ratio <= forgiveness_range_above or self.reward_ratio >= forgiveness_range_below:
+                reward += self.reward_ratio * self.glide_reward_gamma
+                #print("positive reward ", reward)
+            else:
+                reward -= self.reward_ratio * self.glide_reward_gamma
+                #print("negative reward ", reward)
+
+            # if glide_ratio > glide_max:
+            #     print("old glide max: ", glide_max)
+            #     glide_max = glide_ratio
+            #     # update global glide_max
+            #     print("new glide max: ", glide_max)
+
+
 
         # Punish for hitting a pillar in midflight
         if self.obs[1] > 3:
@@ -161,18 +201,17 @@ class elytraFlyer(gym.Env):
         for x in range(-1 * int(width/2), int(width/2)):
             for z in range(length):
                 if randint(1/self.pillar_frequency) == 1:
-                    return_string += f"<DrawLine x1='{x}' y1='2' z1='{z}' x2 = '{x}' y2 = '100' z2 = '{z}' type='diamond_block'/>\n"
+                    if x >= 15 or x <= -15:
+                        return_string += f"<DrawLine x1='{x}' y1='2' z1='{z}' x2 = '{x}' y2 = '100' z2 = '{z}' type='diamond_block'/>\n"
         return return_string
 
 
     def GetMissionXML(self):
         return '''<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
                 <Mission xmlns="http://ProjectMalmo.microsoft.com" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-
                     <About>
                         <Summary>Hello world!</Summary>
                     </About>
-
                 <ServerSection>
                     <ServerInitialConditions>
                         <Time>
@@ -193,7 +232,6 @@ class elytraFlyer(gym.Env):
                         <ServerQuitWhenAnyAgentFinishes/>
                     </ServerHandlers>
                 </ServerSection>
-
                 <AgentSection mode="Survival">
                     <Name>elytrAI</Name>
                     <AgentStart>
@@ -206,7 +244,6 @@ class elytraFlyer(gym.Env):
                         <HumanLevelCommands/>
                         <ObservationFromFullStats/>
                         <ObservationFromRay/>
-                        <AgentQuitFromTimeUp timeLimitMs="120000"/>
                     </AgentHandlers>
                 </AgentSection>
                 </Mission>
@@ -227,10 +264,10 @@ class elytraFlyer(gym.Env):
             plt.title('Elytrai Flight Rewards')
             plt.ylabel('Return')
             plt.xlabel('Steps')
-            plt.savefig('outputs/returns.png')
+            plt.savefig('returns.png')
 
             # Write to TXT file
-            with open('outputs/returns.txt', 'w') as f:
+            with open('returns.txt', 'w') as f:
                 for step, value in zip(self.steps[1:], self.returns[1:]):
                     f.write("{}\t{}\n".format(step, value))
         except:
@@ -246,14 +283,33 @@ class elytraFlyer(gym.Env):
             plt.title('Elytrai Flight Rewards')
             plt.ylabel('Distance')
             plt.xlabel('Episodes')
-            plt.savefig('outputs/DistanceFlown.png')
+            plt.savefig('DistanceFlown.png')
 
             # Write to TXT file
-            with open('outputs/DistanceFlown.txt', 'w') as f:
+            with open('DistanceFlown.txt', 'w') as f:
                 for step, value in zip(self.episodes[1:], self.flightDistances[1:]):
                     f.write("{}\t{}\n".format(step, value))
         except:
             print("unable to log flight distance results")
+
+        try:
+            # Create graph
+            box = np.ones(self.log_frequency) / self.log_frequency
+            returns_smooth = np.convolve(self.recordedRatios[1:], box, mode='same')
+            plt.clf()
+            plt.plot(self.episodes[1:], returns_smooth)
+            plt.title('Elytrai Flight Rewards')
+            plt.ylabel('Recorded Glide Ratio')
+            plt.xlabel('Episodes')
+            plt.savefig('glideRatios.png')
+
+            # Write to TXT file
+            with open('glideRatios.txt', 'w') as f:
+                for step, value in zip(self.episodes[1:], self.recordedRatios[1:]):
+                    f.write("{}\t{}\n".format(step, value))
+        except:
+            print("unable to log glide ratio results")
+
 
     def init_malmo(self):
         """
@@ -292,10 +348,8 @@ class elytraFlyer(gym.Env):
     def get_observation(self, world_state):
         """
         Use the agent observation API to get the current X, Y, and Z values of the agent
-
         Args
             world_state: <object> current agent world state
-
         Returns
             observation: <np.array> the state observation [X, Y, Z, xVelo, yVelo, zVelo]
         """
