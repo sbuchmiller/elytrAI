@@ -165,7 +165,8 @@ class elytraFlyer(gym.Env):
         for x in range(-1 * int(width/2), int(width/2)):
             for z in range(length):
                 if randint(1/self.pillar_frequency) == 1:
-                    return_string += f"<DrawLine x1='{x}' y1='2' z1='{z}' x2 = '{x}' y2 = '100' z2 = '{z}' type='diamond_block'/>\n"
+                    if x >= 15 or x <= -15:
+                        return_string += f"<DrawLine x1='{x}' y1='2' z1='{z}' x2 = '{x}' y2 = '100' z2 = '{z}' type='diamond_block'/>\n"
         return return_string
 
 
