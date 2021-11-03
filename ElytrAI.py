@@ -25,13 +25,14 @@ from ray.rllib.agents import ppo
 class elytraFlyer(gym.Env):
 
     def __init__(self, env_config):
-        self.num_observations = 7
+        self.num_observations = 10
         self.log_frequency = 1
         self.move_mult = 50
         self.distance_reward_gamma = 0.02
         self.velocity_reward_gamma = 0.1
         self.damage_taken_reward_gamma = 10
         self.pillar_frequency = 0.005
+        self.pillar_touch_punishment = 0
 
         # RLlib params
         self.action_space = Box(-2, 2, shape=(2,), dtype=np.float32)
@@ -71,7 +72,9 @@ class elytraFlyer(gym.Env):
         Clear all per-episode variables and reset world for next episode
 
         Returns
-            observation: <np.array> [X, Y, Z, xVelo, yVelo, zVelo, BlockSightDistance]
+            observation: <np.array> [xPos, yPos, zPos, xVelocity, yVelocity, zVelocity,
+                                                            blockInSightDistance, blockInSightX, blockInSightY,
+                                                            blockInSightZ]
         """
         # resets malmo world to xml file
         world_state = self.init_malmo()
@@ -114,7 +117,9 @@ class elytraFlyer(gym.Env):
             action: <box> 2x1 box defining action - X and Y for where to move mouse.
 
         Returns
-            observation: <np.array> [X, Y, Z, xVelo, yVelo, zVelo, BlockSightDistance] location
+            observation: <np.array> [xPos, yPos, zPos, xVelocity, yVelocity, zVelocity,
+                                                            blockInSightDistance, blockInSightX, blockInSightY,
+                                                            blockInSightZ]
             reward: <float> reward from taking action
             done: <bool> indicates terminal state
             info: <dict> dictionary of extra information
@@ -141,25 +146,34 @@ class elytraFlyer(gym.Env):
         reward = 0
         # Get's rewards defined in XML (We have none right now)
         for r in world_state.rewards:
-            reward += r.getValue()
+            if r.getValue() != 0:
+                # print(f"step() - Punish for touching diamond_block = {r.getValue()}")
+                reward += r.getValue()
 
         # Reward for going far in the Z direction
         reward += self.obs[2] * self.distance_reward_gamma
-        reward += self.obs[5] * self.velocity_reward_gamma
+        # reward += self.obs[5] * self.velocity_reward_gamma
+
+        # print(f"step() - Reward for distance and velocity = {reward}")
 
         # Punish for hitting a pillar in midflight
+        """
         if self.obs[1] > 3:
-            reward -= self.damage_taken * self.damage_taken_reward_gamma
+            punishment = self.damage_taken * self.damage_taken_reward_gamma
+            if punishment != 0:
+                reward -= punishment
+                # print(f"step() - Punishment for taking damage = -{punishment}")
+        """
 
         # add reward for this step to the episode return value.
         self.episode_return += reward
-
+        print(f"step() - Episode Return so far = {self.episode_return}")
         return self.obs, reward, done, dict()
 
     def getPillarLocations(self, width=300, length=1000):
         return_string = ""
         for x in range(-1 * int(width/2), int(width/2)):
-            for z in range(length):
+            for z in range(30, length):
                 if randint(1/self.pillar_frequency) == 1:
                     return_string += f"<DrawLine x1='{x}' y1='2' z1='{z}' x2 = '{x}' y2 = '100' z2 = '{z}' type='diamond_block'/>\n"
         return return_string
@@ -191,6 +205,7 @@ class elytraFlyer(gym.Env):
                             <DrawCuboid x1="-20" y1="2" z1="1" x2="-10" y2="100" z2="30" type="air"/>
                         </DrawingDecorator>
                         <ServerQuitWhenAnyAgentFinishes/>
+                        <ServerQuitFromTimeUp timeLimitMs="45000"/>
                     </ServerHandlers>
                 </ServerSection>
 
@@ -206,7 +221,10 @@ class elytraFlyer(gym.Env):
                         <HumanLevelCommands/>
                         <ObservationFromFullStats/>
                         <ObservationFromRay/>
-                        <AgentQuitFromTimeUp timeLimitMs="120000"/>
+                        <RewardForTouchingBlockType>
+                            ''' + \
+                            f'<Block reward="{self.pillar_touch_punishment}" type="diamond_block"/>' + ''' 
+                        </RewardForTouchingBlockType>  
                     </AgentHandlers>
                 </AgentSection>
                 </Mission>
@@ -227,10 +245,10 @@ class elytraFlyer(gym.Env):
             plt.title('Elytrai Flight Rewards')
             plt.ylabel('Return')
             plt.xlabel('Steps')
-            plt.savefig('outputs/returns.png')
+            plt.savefig('returns.png')
 
             # Write to TXT file
-            with open('outputs/returns.txt', 'w') as f:
+            with open('returns.txt', 'w') as f:
                 for step, value in zip(self.steps[1:], self.returns[1:]):
                     f.write("{}\t{}\n".format(step, value))
         except:
@@ -246,10 +264,10 @@ class elytraFlyer(gym.Env):
             plt.title('Elytrai Flight Rewards')
             plt.ylabel('Distance')
             plt.xlabel('Episodes')
-            plt.savefig('outputs/DistanceFlown.png')
+            plt.savefig('DistanceFlown.png')
 
             # Write to TXT file
-            with open('outputs/DistanceFlown.txt', 'w') as f:
+            with open('DistanceFlown.txt', 'w') as f:
                 for step, value in zip(self.episodes[1:], self.flightDistances[1:]):
                     f.write("{}\t{}\n".format(step, value))
         except:
@@ -297,7 +315,9 @@ class elytraFlyer(gym.Env):
             world_state: <object> current agent world state
 
         Returns
-            observation: <np.array> the state observation [X, Y, Z, xVelo, yVelo, zVelo]
+            observation: <np.array> the state observation [xPos, yPos, zPos, xVelocity, yVelocity, zVelocity,
+                                                            blockInSightDistance, blockInSightX, blockInSightY,
+                                                            blockInSightZ]
         """
         obs = np.zeros((self.num_observations,))  # Initialize zero'd obs return
 
@@ -312,9 +332,23 @@ class elytraFlyer(gym.Env):
 
                 # Get the distance of the block at the center of screen. -1 if no block there
                 try:
-                    blockInSightDistance = jsonLoad['LineOfSight']['distance']
+                    blockType = jsonLoad['LineOfSight']['type']
+                    if blockType == "diamond_block":
+                        blockInSightX = jsonLoad['LineOfSight']['x']
+                        blockInSightY = jsonLoad['LineOfSight']['x']
+                        blockInSightZ = jsonLoad['LineOfSight']['x']
+                        blockInSightDistance = jsonLoad['LineOfSight']['distance']
+                    else:
+                        blockInSightDistance = 10000
+                        blockInSightX = 10000
+                        blockInSightY = 10000
+                        blockInSightZ = 10000
+
                 except:
-                    blockInSightDistance = -1
+                    blockInSightDistance = 10000
+                    blockInSightX = 10000
+                    blockInSightY = 10000
+                    blockInSightZ = 10000
 
                 # Get the X, Y, and Z positions of the agent
                 xPos = jsonLoad['XPos']
@@ -333,7 +367,7 @@ class elytraFlyer(gym.Env):
                 self.lastz = zPos
 
                 # Create obs np array and return
-                obsList = [xPos, yPos, zPos, xVelocity, yVelocity, zVelocity, blockInSightDistance]
+                obsList = [xPos, yPos, zPos, xVelocity, yVelocity, zVelocity, blockInSightDistance, blockInSightX, blockInSightY, blockInSightZ]
                 obs = np.array(obsList)
                 break
 
