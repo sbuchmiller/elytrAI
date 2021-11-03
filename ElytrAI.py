@@ -19,12 +19,12 @@ import gym
 import ray
 from gym.spaces import Discrete, Box
 from ray.rllib.agents import ppo
-# from ray.rllib.agents import a2c
+#from ray.rllib.agents.a3c import a2c
 
 
 class elytraFlyer(gym.Env):
 
-    def __init__(self, env_config):
+    def __init__(self, env_config, log_frequency = 1, move_mult = 50, ):
         self.num_observations = 7
         self.log_frequency = 1
         self.move_mult = 50
@@ -62,6 +62,9 @@ class elytraFlyer(gym.Env):
         self.steps = []
         self.episodes = []
         self.flightDistances = []
+        self.damageTakenPercentLast20Episodes = []
+        self.damageFromLast20 = [0]*20 #array of 20 zeroes
+
 
         # Set NP to print decimal numbers rather than scientific notation.
         np.set_printoptions(suppress=True)
@@ -90,16 +93,17 @@ class elytraFlyer(gym.Env):
         else:
             currentEpisode = 0
         self.episodes.append(currentEpisode)
-
-        # Reset values of the run
-        self.episode_return = 0
-        self.episode_step = 0
-        self.clearObservationVariables()
+        self.damageTakenPercentLast20Episodes.append(sum(self.damageFromLast20)/20)
 
         # Log (Right now I have it logging after every flight
         # if len(self.returns) > self.log_frequency + 1 and \
         #         len(self.returns) % self.log_frequency == 0:
         self.log_returns()
+
+         # Reset values of the run
+        self.episode_return = 0
+        self.episode_step = 0
+        self.clearObservationVariables()
 
         # Get Observations
         self.obs = self.get_observation(world_state)
@@ -184,11 +188,11 @@ class elytraFlyer(gym.Env):
                     <ServerHandlers>
                         <FlatWorldGenerator generatorString="2;7,11;1;"/>
                         <DrawingDecorator>
-                            <DrawBlock x="0" y="60" z="0" type="lapis_block"/>
-                            <DrawCuboid x1="-150" y1="2" z1="1" x2="150" y2="100" z2="1000" type="air"/>
+                            <DrawCuboid x1="-150" y1="2" z1="0" x2="150" y2="100" z2="1000" type="air"/>
                             ''' + \
                                 self.getPillarLocations() + '''
                             <DrawCuboid x1="-20" y1="2" z1="1" x2="-10" y2="100" z2="30" type="air"/>
+                            <DrawBlock x="0" y="60" z="0" type="lapis_block"/>
                         </DrawingDecorator>
                         <ServerQuitWhenAnyAgentFinishes/>
                     </ServerHandlers>
@@ -272,11 +276,11 @@ class elytraFlyer(gym.Env):
         # Log the flight distances
         try:
             # Create graph
-            box = np.ones(self.log_frequency) / self.log_frequency
-            returns_smooth = np.convolve(self.flightDistances[1:], box, mode='same')
+            #box = np.ones(self.log_frequency) / self.log_frequency
+            #returns_smooth = np.convolve(self.flightDistances[1:], box, mode='same')
             plt.clf()
-            plt.plot(self.episodes[1:], returns_smooth)
-            plt.title('Elytrai Flight Rewards')
+            plt.plot(self.episodes[1:], self.flightDistances[1:])
+            plt.title('Elytrai Distance Flown in Z direction')
             plt.ylabel('Distance')
             plt.xlabel('Episodes')
             plt.savefig('outputs/DistanceFlown.png')
@@ -287,6 +291,26 @@ class elytraFlyer(gym.Env):
                     f.write("{}\t{}\n".format(step, value))
         except:
             print("unable to log flight distance results")
+
+
+        #log damage taken % from last 20 flights
+        try:
+            #box = np.ones(self.log_frequency)/ self.log_frequency
+            #returns_smooth = np.convolve(self.episodes[1:], box, mode='same')
+            plt.clf()
+            plt.plot(self.episodes[1:], self.damageTakenPercentLast20Episodes[1:])
+            plt.title('Percent of episodes with damage taken in last 20 episodes')
+            plt.ylabel('Damage Percent')
+            plt.xlabel('Episodes')
+            plt.savefig('outputs/DamagePercent.png')
+            # Write to TXT file
+            with open('outputs/DamagePercent.txt', 'w') as f:
+                for step, value in zip(self.episodes[1:], self.damageTakenPercentLast20Episodes[1:]):
+                    f.write("{}\t{}\n".format(step, value))
+        except Exception as e:
+            print("unable to log damage taken Percent results")
+            print(e)
+
 
     def init_malmo(self):
         """
@@ -340,8 +364,7 @@ class elytraFlyer(gym.Env):
                 # Get observation json
                 msg = world_state.observations[-1].text
                 jsonLoad = json.loads(msg)
-
-                self.damage_taken = 20 - jsonLoad['Life']
+                
 
                 # Get the distance of the block at the center of screen. -1 if no block there
                 try:
@@ -354,6 +377,11 @@ class elytraFlyer(gym.Env):
                 yPos = jsonLoad['YPos']
                 zPos = jsonLoad['ZPos']
 
+                # determine if damage was taken from hitting a pillar
+                if yPos > 3:
+                    self.damage_taken = 20 - jsonLoad['Life']
+                    if self.damage_taken > 0:
+                        self.damageFromLast20[0] = 1
 
                 # calculate velocities
                 xVelocity = xPos - self.lastx
@@ -384,98 +412,11 @@ class elytraFlyer(gym.Env):
         self.zvelocity = 0
         self.damage_taken = 0
 
-<<<<<<< HEAD
+        if len(self.damageFromLast20) >= 20:
+            self.damageFromLast20 = self.damageFromLast20[:-1]
+            self.damageFromLast20.insert(0,0)
 
-if __name__ == "__main__":
-
-
-# Create default Malmo objects:
-agent_host = MalmoPython.AgentHost()
-try:
-    agent_host.parse( sys.argv )
-except RuntimeError as e:
-    print('ERROR:',e)
-    print(agent_host.getUsage())
-    exit(1)
-if agent_host.receivedArgument("help"):
-    print(agent_host.getUsage())
-    exit(0)
-
-if agent_host.receivedArgument("test"):
-    num_repeats = 1
-else:
-    num_repeats = 10
-
-for i in range(num_repeats):
-    size = int(6 + 0.5 * i)
-    print("Size of maze:", size)
-    my_mission = MalmoPython.MissionSpec(GetMissionXML("0", 0.4 + float(i / 20.0), size), True)
-    my_mission_record = MalmoPython.MissionRecordSpec()
-    my_mission.requestVideo(800, 500)
-    my_mission.setViewpoint(1)
-    # Attempt to start a mission:
-    max_retries = 3
-    my_clients = MalmoPython.ClientPool()
-    my_clients.add(MalmoPython.ClientInfo('127.0.0.1', 10000)) # add Minecraft machines here as available
-
-    for retry in range(max_retries):
-        try:
-            agent_host.startMission( my_mission, my_clients, my_mission_record, 0, "%s-%d" % ('Moshe', i) )
-            break
-        except RuntimeError as e:
-            if retry == max_retries - 1:
-                print("Error starting mission", (i+1), ":",e)
-                exit(1)
-            else:
-                time.sleep(2)
-
-    # Loop until mission starts:
-    print("Waiting for the mission", (i+1), "to start ",)
-    world_state = agent_host.getWorldState()
-    while not world_state.has_mission_begun:
-        #sys.stdout.write(".")
-        time.sleep(0.1)
-        world_state = agent_host.getWorldState()
-        for error in world_state.errors:
-            print("Error:",error.text)
-
-    print()
-    print("Mission", (i+1), "running.")
-
-    grid = load_grid(world_state)
-
-    #put calls to other functions here
-
-
-    # Action loop:
-    action_index = 0
-    initial_jump_complete = False
-    while world_state.is_mission_running:
-
-        # Tells agent to jump forward off starter platform
-        if not initial_jump_complete:
-            agent_host.sendCommand("forward 1")
-            time.sleep(.1)
-            agent_host.sendCommand("jump 1")
-            time.sleep(.1)
-            agent_host.sendCommand("jump 0")
-            agent_host.sendCommand("forward 0")
-            time.sleep(0.3)
-            agent_host.sendCommand("jump 1")
-            time.sleep(.1)
-            agent_host.sendCommand("jump 0")
-            initial_jump_complete = True
-
-        # Some example Yaw commands
-        agent_host.sendCommand("setYaw 0")
-        time.sleep(0.3)
-        agent_host.sendCommand("setYaw -50")
-        time.sleep(0.3)
-        agent_host.sendCommand("setYaw 60")
-
-=======
     def agentJumpOffStartingBlock(self):
->>>>>>> 443c8e8742cae585718378795e17628719800a62
         """
         Tells the agent to jump off the starting platform and open the elytra
         """
