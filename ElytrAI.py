@@ -24,8 +24,8 @@ from ray.rllib.agents import ppo
 
 class elytraFlyer(gym.Env):
 
-    def __init__(self, env_config, log_frequency = 1, move_mult = 50, ):
-        self.num_observations = 7
+    def __init__(self, env_config, log_frequency=1, move_mult=50, ):
+        self.num_player_observations = 6
         self.log_frequency = 1
         self.move_mult = 50
         self.distance_reward_gamma = 0.02
@@ -34,8 +34,14 @@ class elytraFlyer(gym.Env):
         self.pillar_frequency = 0.005
         self.pillar_touch_punishment = 0
 
+        self.vision_width = 15
+        self.vision_distance = 60
+        self.vision_height = 30
+        self.num_vision_observations = ((self.vision_width * 2) + 1) * (self.vision_distance + 1)
+        self.num_observations = self.num_player_observations + self.num_vision_observations
+
         # RLlib params
-        self.action_space = Box(-2, 2, shape=(2,), dtype=np.float32)
+        self.action_space = Box(-1, 1, shape=(2,), dtype=np.float32)
         self.observation_space = Box(-10000, 10000, shape=(self.num_observations,), dtype=np.float32)
 
         # Malmo Parameters
@@ -64,8 +70,7 @@ class elytraFlyer(gym.Env):
         self.episodes = []
         self.flightDistances = []
         self.damageTakenPercentLast20Episodes = []
-        self.damageFromLast20 = [0]*20 #array of 20 zeroes
-
+        self.damageFromLast20 = [0]*20  # array of 20 zeroes
 
         # Set NP to print decimal numbers rather than scientific notation.
         np.set_printoptions(suppress=True)
@@ -155,7 +160,84 @@ class elytraFlyer(gym.Env):
                 reward += r.getValue()
 
         # Reward for going far in the Z direction
-        reward += self.obs[2] * self.distance_reward_gamma
+        reward += self.lastz * self.distance_reward_gamma
+
+        # Create gradient reward decrease around the poles. Less reward the closer steve is to the poles.
+        steve_location_index = 6 + (self.vision_width * 2 + 1) + self.vision_width
+        total_width = self.vision_width * 2 + 1
+
+        # Steve is right next to pillar
+        if self.obs[steve_location_index] == 1 or \
+                self.obs[steve_location_index - 1] == 1 or \
+                self.obs[steve_location_index + 1] == 1:
+            reward = 0
+
+        # Steve is 2 blocks away from pillar
+        elif self.obs[steve_location_index - 2] == 1 or \
+                self.obs[steve_location_index + 2] == 1 or \
+                self.obs[steve_location_index + total_width] == 1 or \
+                self.obs[steve_location_index + total_width + 1] == 1 or \
+                self.obs[steve_location_index + total_width + 2] == 1 or \
+                self.obs[steve_location_index + total_width - 1] == 1 or \
+                self.obs[steve_location_index + total_width - 2] == 1:
+            reward *= .2
+
+        # Steve is 3 blocks away from pillar
+        elif self.obs[steve_location_index - 3] == 1 or \
+                self.obs[steve_location_index + 3] == 1 or \
+                self.obs[steve_location_index + total_width + 3] == 1 or \
+                self.obs[steve_location_index + total_width - 3] == 1 or \
+                self.obs[steve_location_index + (total_width * 2)] == 1 or \
+                self.obs[steve_location_index + (total_width * 2) + 1] == 1 or \
+                self.obs[steve_location_index + (total_width * 2) + 2] == 1 or \
+                self.obs[steve_location_index + (total_width * 2) + 3] == 1 or \
+                self.obs[steve_location_index + (total_width * 2) - 1] == 1 or \
+                self.obs[steve_location_index + (total_width * 2) - 2] == 1 or \
+                self.obs[steve_location_index + (total_width * 2) - 3] == 1:
+            reward *= .3
+
+        # Steve is 4 blocks away from pillar
+        elif self.obs[steve_location_index - 4] == 1 or \
+                self.obs[steve_location_index + 4] == 1 or \
+                self.obs[steve_location_index + total_width + 4] == 1 or \
+                self.obs[steve_location_index + total_width - 4] == 1 or \
+                self.obs[steve_location_index + (total_width * 2) + 4] == 1 or \
+                self.obs[steve_location_index + (total_width * 2) - 4] == 1 or \
+                self.obs[steve_location_index + (total_width * 3)] == 1 or \
+                self.obs[steve_location_index + (total_width * 3) + 1] == 1 or \
+                self.obs[steve_location_index + (total_width * 3) + 2] == 1 or \
+                self.obs[steve_location_index + (total_width * 3) + 3] == 1 or \
+                self.obs[steve_location_index + (total_width * 3) + 4] == 1 or \
+                self.obs[steve_location_index + (total_width * 3) - 1] == 1 or \
+                self.obs[steve_location_index + (total_width * 3) - 2] == 1 or \
+                self.obs[steve_location_index + (total_width * 3) - 3] == 1 or \
+                self.obs[steve_location_index + (total_width * 3) - 4] == 1:
+            reward *= .5
+
+        # Steve is 5 blocks away from pillar
+        elif self.obs[steve_location_index - 5] == 1 or \
+                self.obs[steve_location_index + 5] == 1 or \
+                self.obs[steve_location_index + total_width + 5] == 1 or \
+                self.obs[steve_location_index + total_width - 5] == 1 or \
+                self.obs[steve_location_index + (total_width * 2) + 5] == 1 or \
+                self.obs[steve_location_index + (total_width * 2) - 5] == 1 or \
+                self.obs[steve_location_index + (total_width * 3) + 5] == 1 or \
+                self.obs[steve_location_index + (total_width * 3) - 5] == 1 or \
+                self.obs[steve_location_index + (total_width * 4)] == 1 or \
+                self.obs[steve_location_index + (total_width * 4) + 1] == 1 or \
+                self.obs[steve_location_index + (total_width * 4) + 2] == 1 or \
+                self.obs[steve_location_index + (total_width * 4) + 3] == 1 or \
+                self.obs[steve_location_index + (total_width * 4) + 4] == 1 or \
+                self.obs[steve_location_index + (total_width * 4) + 5] == 1 or \
+                self.obs[steve_location_index + (total_width * 4) - 1] == 1 or \
+                self.obs[steve_location_index + (total_width * 4) - 2] == 1 or \
+                self.obs[steve_location_index + (total_width * 4) - 3] == 1 or \
+                self.obs[steve_location_index + (total_width * 4) - 4] == 1 or \
+                self.obs[steve_location_index + (total_width * 4) - 5] == 1:
+            reward *= .75
+
+        print(f"step() - Step reward = {reward}")
+
         # reward += self.obs[5] * self.velocity_reward_gamma
 
         # print(f"step() - Reward for distance and velocity = {reward}")
@@ -171,7 +253,7 @@ class elytraFlyer(gym.Env):
 
         # add reward for this step to the episode return value.
         self.episode_return += reward
-        print(f"step() - Episode Return so far = {self.episode_return}")
+        # print(f"step() - Episode Return so far = {self.episode_return}")
         return self.obs, reward, done, dict()
 
     def getPillarLocations(self, width=300, length=1000):
@@ -179,10 +261,8 @@ class elytraFlyer(gym.Env):
         for x in range(-1 * int(width/2), int(width/2)):
             for z in range(30, length):
                 if randint(1/self.pillar_frequency) == 1:
-                    if x >= 15 or x <= -15:
-                        return_string += f"<DrawLine x1='{x}' y1='2' z1='{z}' x2 = '{x}' y2 = '100' z2 = '{z}' type='diamond_block'/>\n"
+                    return_string += f"<DrawLine x1='{x}' y1='2' z1='{z}' x2 = '{x}' y2 = '100' z2 = '{z}' type='diamond_block'/>\n"
         return return_string
-
 
     def GetMissionXML(self):
         return '''<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
@@ -226,6 +306,12 @@ class elytraFlyer(gym.Env):
                         <HumanLevelCommands/>
                         <ObservationFromFullStats/>
                         <ObservationFromRay/>
+                        <ObservationFromGrid>
+                            <Grid name="floorAll">
+                                <min x="-'''+str(self.vision_width)+'''" y="0" z="0"/>
+                                <max x="'''+str(self.vision_width)+'''" y="0" z="'''+str(self.vision_distance)+'''"/>
+                            </Grid>
+                        </ObservationFromGrid>
                         <RewardForTouchingBlockType>
                             ''' + \
                             f'<Block reward="{self.pillar_touch_punishment}" type="diamond_block"/>' + ''' 
@@ -235,38 +321,6 @@ class elytraFlyer(gym.Env):
                 </Mission>
                 '''
 
-
-    def init_malmo(self):
-        """
-        Initialize new malmo mission.
-        """
-        my_mission = MalmoPython.MissionSpec(self.get_mission_xml(), True)
-        my_mission_record = MalmoPython.MissionRecordSpec()
-        my_mission.requestVideo(800, 500)
-        my_mission.setViewpoint(1)
-
-        max_retries = 3
-        my_clients = MalmoPython.ClientPool()
-        my_clients.add(MalmoPython.ClientInfo('127.0.0.1', 10000)) # add Minecraft machines here as available
-
-        for retry in range(max_retries):
-            try:
-                self.agent_host.startMission( my_mission, my_clients, my_mission_record, 0, 'Elytra Fly' )
-                break
-            except RuntimeError as e:
-                if retry == max_retries - 1:
-                    print("Error starting mission:", e)
-                    exit(1)
-                else:
-                    time.sleep(2)
-
-        world_state = self.agent_host.getWorldState()
-        while not world_state.has_mission_begun:
-            time.sleep(0.1)
-            world_state = self.agent_host.getWorldState()
-            for error in world_state.errors:
-                print("\nError:", error.text)
-        return world_state
 
     def log_returns(self):
         """
@@ -283,10 +337,10 @@ class elytraFlyer(gym.Env):
             plt.title('Elytrai Flight Rewards')
             plt.ylabel('Return')
             plt.xlabel('Steps')
-            plt.savefig('returns.png')
+            plt.savefig('outputs/returns.png')
 
             # Write to TXT file
-            with open('returns.txt', 'w') as f:
+            with open('outputs/returns.txt', 'w') as f:
                 for step, value in zip(self.steps[1:], self.returns[1:]):
                     f.write("{}\t{}\n".format(step, value))
         except:
@@ -302,33 +356,38 @@ class elytraFlyer(gym.Env):
             plt.title('Elytrai Distance Flown in Z direction')
             plt.ylabel('Distance')
             plt.xlabel('Episodes')
-            plt.savefig('DistanceFlown.png')
+            plt.savefig('outputs/DistanceFlown.png')
 
             # Write to TXT file
-            with open('DistanceFlown.txt', 'w') as f:
+            with open('outputs/DistanceFlown.txt', 'w') as f:
                 for step, value in zip(self.episodes[1:], self.flightDistances[1:]):
                     f.write("{}\t{}\n".format(step, value))
         except:
             print("unable to log flight distance results")
 
 
-        #log damage taken % from last 20 flights
-        try:
-            #box = np.ones(self.log_frequency)/ self.log_frequency
-            #returns_smooth = np.convolve(self.episodes[1:], box, mode='same')
-            plt.clf()
-            plt.plot(self.episodes[1:], self.damageTakenPercentLast20Episodes[1:])
-            plt.title('Percent of episodes with damage taken in last 20 episodes')
-            plt.ylabel('Damage Percent')
-            plt.xlabel('Episodes')
-            plt.savefig('outputs/DamagePercent.png')
-            # Write to TXT file
-            with open('outputs/DamagePercent.txt', 'w') as f:
-                for step, value in zip(self.episodes[1:], self.damageTakenPercentLast20Episodes[1:]):
-                    f.write("{}\t{}\n".format(step, value))
-        except Exception as e:
-            print("unable to log damage taken Percent results")
-            print(e)
+    def convertFOVlistToNPArray1s0s(self, visionList):
+        """
+        Takes a list of blocks in within the agents field of view and converts the 'air' blocks to 0
+        and the 'diamond_block' blocks to 1
+
+        Args
+            visionList: <list> current agent field of view
+
+        Returns
+            visionList: <np.array> agent field of view as NP array of 1s and 0s
+        """
+        outputList = []
+        for block in visionList:
+            if block == "air":
+                outputList.append(0)
+            elif block == "diamond_block":
+                outputList.append(1)
+            else:
+                outputList.append(2)
+
+        outputList = np.array(outputList)
+        return outputList
 
 
     def init_malmo(self):
@@ -373,9 +432,7 @@ class elytraFlyer(gym.Env):
             world_state: <object> current agent world state
 
         Returns
-            observation: <np.array> the state observation [xPos, yPos, zPos, xVelocity, yVelocity, zVelocity,
-                                                            blockInSightDistance, blockInSightX, blockInSightY,
-                                                            blockInSightZ]
+            observation: <np.array> the state observation [xPos, yPos, zPos, xVelocity, yVelocity, zVelocity, ....]
         """
         obs = np.zeros((self.num_observations,))  # Initialize zero'd obs return
 
@@ -385,7 +442,6 @@ class elytraFlyer(gym.Env):
                 # Get observation json
                 msg = world_state.observations[-1].text
                 jsonLoad = json.loads(msg)
-                
 
                 # Get the distance of the block at the center of screen. -1 if no block there
                 try:
@@ -429,8 +485,11 @@ class elytraFlyer(gym.Env):
                 self.lastz = zPos
 
                 # Create obs np array and return
-                obsList = [xPos, yPos, zPos, xVelocity, yVelocity, zVelocity, blockInSightDistance, blockInSightX, blockInSightY, blockInSightZ]
-                obs = np.array(obsList)
+                obsArray = np.array([xPos, yPos, zPos, xVelocity, yVelocity, zVelocity])
+
+                # Get the blocks around steve
+                blockArray = self.convertFOVlistToNPArray1s0s(jsonLoad['floorAll'])
+                obs = np.concatenate((obsArray, blockArray), axis=None)
                 break
 
         return obs
@@ -449,7 +508,7 @@ class elytraFlyer(gym.Env):
 
         if len(self.damageFromLast20) >= 20:
             self.damageFromLast20 = self.damageFromLast20[:-1]
-            self.damageFromLast20.insert(0,0)
+            self.damageFromLast20.insert(0, 0)
 
     def agentJumpOffStartingBlock(self):
         """
