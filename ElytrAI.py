@@ -37,6 +37,7 @@ class elytraFlyer(gym.Env):
         self.vision_width = 15
         self.vision_distance = 60
         self.vision_height = 30
+        self.pillarEffectRadius = 20
         self.num_vision_observations = ((self.vision_width * 2) + 1) * (self.vision_distance + 1)
         self.num_observations = self.num_player_observations + self.num_vision_observations
 
@@ -164,96 +165,15 @@ class elytraFlyer(gym.Env):
 
         # Create gradient reward decrease around the poles. Less reward the closer steve is to the poles.
         steve_location_index = 6 + (self.vision_width * 2 + 1) + self.vision_width
-        total_width = self.vision_width * 2 + 1
 
-        # Steve is right next to pillar
-        if self.obs[steve_location_index] == 1 or \
-                self.obs[steve_location_index - 1] == 1 or \
-                self.obs[steve_location_index + 1] == 1:
-            reward = 0
-
-        # Steve is 2 blocks away from pillar
-        elif self.obs[steve_location_index - 2] == 1 or \
-                self.obs[steve_location_index + 2] == 1 or \
-                self.obs[steve_location_index + total_width] == 1 or \
-                self.obs[steve_location_index + total_width + 1] == 1 or \
-                self.obs[steve_location_index + total_width + 2] == 1 or \
-                self.obs[steve_location_index + total_width - 1] == 1 or \
-                self.obs[steve_location_index + total_width - 2] == 1:
-            reward *= .2
-
-        # Steve is 3 blocks away from pillar
-        elif self.obs[steve_location_index - 3] == 1 or \
-                self.obs[steve_location_index + 3] == 1 or \
-                self.obs[steve_location_index + total_width + 3] == 1 or \
-                self.obs[steve_location_index + total_width - 3] == 1 or \
-                self.obs[steve_location_index + (total_width * 2)] == 1 or \
-                self.obs[steve_location_index + (total_width * 2) + 1] == 1 or \
-                self.obs[steve_location_index + (total_width * 2) + 2] == 1 or \
-                self.obs[steve_location_index + (total_width * 2) + 3] == 1 or \
-                self.obs[steve_location_index + (total_width * 2) - 1] == 1 or \
-                self.obs[steve_location_index + (total_width * 2) - 2] == 1 or \
-                self.obs[steve_location_index + (total_width * 2) - 3] == 1:
-            reward *= .3
-
-        # Steve is 4 blocks away from pillar
-        elif self.obs[steve_location_index - 4] == 1 or \
-                self.obs[steve_location_index + 4] == 1 or \
-                self.obs[steve_location_index + total_width + 4] == 1 or \
-                self.obs[steve_location_index + total_width - 4] == 1 or \
-                self.obs[steve_location_index + (total_width * 2) + 4] == 1 or \
-                self.obs[steve_location_index + (total_width * 2) - 4] == 1 or \
-                self.obs[steve_location_index + (total_width * 3)] == 1 or \
-                self.obs[steve_location_index + (total_width * 3) + 1] == 1 or \
-                self.obs[steve_location_index + (total_width * 3) + 2] == 1 or \
-                self.obs[steve_location_index + (total_width * 3) + 3] == 1 or \
-                self.obs[steve_location_index + (total_width * 3) + 4] == 1 or \
-                self.obs[steve_location_index + (total_width * 3) - 1] == 1 or \
-                self.obs[steve_location_index + (total_width * 3) - 2] == 1 or \
-                self.obs[steve_location_index + (total_width * 3) - 3] == 1 or \
-                self.obs[steve_location_index + (total_width * 3) - 4] == 1:
-            reward *= .5
-
-        # Steve is 5 blocks away from pillar
-        elif self.obs[steve_location_index - 5] == 1 or \
-                self.obs[steve_location_index + 5] == 1 or \
-                self.obs[steve_location_index + total_width + 5] == 1 or \
-                self.obs[steve_location_index + total_width - 5] == 1 or \
-                self.obs[steve_location_index + (total_width * 2) + 5] == 1 or \
-                self.obs[steve_location_index + (total_width * 2) - 5] == 1 or \
-                self.obs[steve_location_index + (total_width * 3) + 5] == 1 or \
-                self.obs[steve_location_index + (total_width * 3) - 5] == 1 or \
-                self.obs[steve_location_index + (total_width * 4)] == 1 or \
-                self.obs[steve_location_index + (total_width * 4) + 1] == 1 or \
-                self.obs[steve_location_index + (total_width * 4) + 2] == 1 or \
-                self.obs[steve_location_index + (total_width * 4) + 3] == 1 or \
-                self.obs[steve_location_index + (total_width * 4) + 4] == 1 or \
-                self.obs[steve_location_index + (total_width * 4) + 5] == 1 or \
-                self.obs[steve_location_index + (total_width * 4) - 1] == 1 or \
-                self.obs[steve_location_index + (total_width * 4) - 2] == 1 or \
-                self.obs[steve_location_index + (total_width * 4) - 3] == 1 or \
-                self.obs[steve_location_index + (total_width * 4) - 4] == 1 or \
-                self.obs[steve_location_index + (total_width * 4) - 5] == 1:
-            reward *= .75
-
+        reward *= self.obs[steve_location_index]
+        # print(f"step() - Step reward reduction multiplier = {self.obs[steve_location_index]}")
         print(f"step() - Step reward = {reward}")
 
-        # reward += self.obs[5] * self.velocity_reward_gamma
-
-        # print(f"step() - Reward for distance and velocity = {reward}")
-
-        # Punish for hitting a pillar in midflight
-        """
-        if self.obs[1] > 3:
-            punishment = self.damage_taken * self.damage_taken_reward_gamma
-            if punishment != 0:
-                reward -= punishment
-                # print(f"step() - Punishment for taking damage = -{punishment}")
-        """
 
         # add reward for this step to the episode return value.
         self.episode_return += reward
-        # print(f"step() - Episode Return so far = {self.episode_return}")
+
         return self.obs, reward, done, dict()
 
     def getPillarLocations(self, width=300, length=1000):
@@ -389,6 +309,60 @@ class elytraFlyer(gym.Env):
         outputList = np.array(outputList)
         return outputList
 
+    def convertFOVlistToNPArrayReturPenalizers(self, visionList):
+        """
+        Takes a list of blocks in within the agents field of view and converts it to an array of score decreasers that
+        are more penalizing the closer they are to a diamond_block
+
+        Args
+            visionList: <list> current agent field of view
+
+        Returns
+            visionList: <np.array> agent field of view as NP array of score penalizers.
+        """
+        total_width = self.vision_width * 2 + 1  # Total width of the agent vision
+        reducPerBlockDist = 1 / self.pillarEffectRadius  # how much less the score is reduced each block you get closer to the pillar
+        visionListSize = len(visionList)  # size of the vision array
+        outputArray = np.ones((len(visionList),))  # Initialize NP array of size visionListSize to all 1s
+
+        # For each block in the item list
+        for i in range(visionListSize):
+            # If block is a diamond block
+            if visionList[i] == 'diamond_block':
+                # The multiplier at that exact location should be 0
+                outputArray[i] = 0
+
+                # For the self.pillarEffectRadius number of rows before the pillar
+                for z in range(-self.pillarEffectRadius, 1):
+                    # Calculate the starting reduction value used at the block at row z directly infront of the pillar
+                    # This value will be 0 one block infront of the pillar and will slowly increase the further back
+                    # from the pillar the agent is.
+                    startingReduc = (reducPerBlockDist * abs(z))
+
+                    # Calculate the amount to increase each block to the side for the given row. I.e for row right
+                    # behind the pillar, the starting reduction is 0 and the block 1 radius to the left or right should
+                    # be 1 and everything in between needs to be smoothly transitioned.
+                    reducIncrement = (1 - startingReduc) / self.pillarEffectRadius
+
+                    # Calculate the index of the block that is at the center of row z directly inline with the pillar
+                    z_index_center = i + (total_width * z)
+
+                    # For each block in row z to the left and right of center that is within radius distance of
+                    # the center.
+                    for x in range(self.pillarEffectRadius):
+
+                        # Calculate the reduction multiplier based on how far off of the center block we are.
+                        reduction = startingReduc + (reducIncrement * x)
+
+                        # If the index we are looking at is within bounds, apply the reduction
+                        if 0 <= z_index_center + x < visionListSize:
+                            outputArray[z_index_center + x] = reduction
+                        if 0 <= z_index_center - x < visionListSize:
+                            outputArray[z_index_center - x] = reduction
+
+        return outputArray
+
+
 
     def init_malmo(self):
         """
@@ -488,10 +462,9 @@ class elytraFlyer(gym.Env):
                 obsArray = np.array([xPos, yPos, zPos, xVelocity, yVelocity, zVelocity])
 
                 # Get the blocks around steve
-                blockArray = self.convertFOVlistToNPArray1s0s(jsonLoad['floorAll'])
+                blockArray = self.convertFOVlistToNPArrayReturPenalizers(jsonLoad['floorAll'])
                 obs = np.concatenate((obsArray, blockArray), axis=None)
                 break
-
         return obs
 
     def clearObservationVariables(self):
