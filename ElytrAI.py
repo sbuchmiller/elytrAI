@@ -70,6 +70,8 @@ class elytraFlyer(gym.Env):
         # Set NP to print decimal numbers rather than scientific notation.
         np.set_printoptions(suppress=True)
 
+        self.ranOnce = False
+
     def reset(self):
         """
         Clear all per-episode variables and reset world for next episode
@@ -148,17 +150,17 @@ class elytraFlyer(gym.Env):
 
         # Get Reward
         reward = 0
-        # Get's rewards defined in XML (We have none right now)
+        # Get's rewards defined in XML
         for r in world_state.rewards:
             if r.getValue() != 0:
                 # print(f"step() - Punish for touching diamond_block = {r.getValue()}")
                 reward += r.getValue()
 
-        # Reward for going far in the Z direction
-        reward += self.obs[2] * self.distance_reward_gamma
-        # reward += self.obs[5] * self.velocity_reward_gamma
+        #get additional rewards
 
-        # print(f"step() - Reward for distance and velocity = {reward}")
+            # Reward for going far in the Z direction
+        reward += self.obs[2] * self.distance_reward_gamma
+
 
         # Punish for hitting a pillar in midflight
         """
@@ -171,7 +173,7 @@ class elytraFlyer(gym.Env):
 
         # add reward for this step to the episode return value.
         self.episode_return += reward
-        print(f"step() - Episode Return so far = {self.episode_return}")
+        #print(f"step() - Episode Return so far = {self.episode_return}")
         return self.obs, reward, done, dict()
 
     def getPillarLocations(self, width=300, length=1000):
@@ -235,39 +237,6 @@ class elytraFlyer(gym.Env):
                 </Mission>
                 '''
 
-
-    def init_malmo(self):
-        """
-        Initialize new malmo mission.
-        """
-        my_mission = MalmoPython.MissionSpec(self.get_mission_xml(), True)
-        my_mission_record = MalmoPython.MissionRecordSpec()
-        my_mission.requestVideo(800, 500)
-        my_mission.setViewpoint(1)
-
-        max_retries = 3
-        my_clients = MalmoPython.ClientPool()
-        my_clients.add(MalmoPython.ClientInfo('127.0.0.1', 10000)) # add Minecraft machines here as available
-
-        for retry in range(max_retries):
-            try:
-                self.agent_host.startMission( my_mission, my_clients, my_mission_record, 0, 'Elytra Fly' )
-                break
-            except RuntimeError as e:
-                if retry == max_retries - 1:
-                    print("Error starting mission:", e)
-                    exit(1)
-                else:
-                    time.sleep(2)
-
-        world_state = self.agent_host.getWorldState()
-        while not world_state.has_mission_begun:
-            time.sleep(0.1)
-            world_state = self.agent_host.getWorldState()
-            for error in world_state.errors:
-                print("\nError:", error.text)
-        return world_state
-
     def log_returns(self):
         """
         Log the current returns as a graph and text file
@@ -295,8 +264,6 @@ class elytraFlyer(gym.Env):
         # Log the flight distances
         try:
             # Create graph
-            #box = np.ones(self.log_frequency) / self.log_frequency
-            #returns_smooth = np.convolve(self.flightDistances[1:], box, mode='same')
             plt.clf()
             plt.plot(self.episodes[1:], self.flightDistances[1:])
             plt.title('Elytrai Distance Flown in Z direction')
@@ -470,12 +437,20 @@ class elytraFlyer(gym.Env):
 
 if __name__ == '__main__':
     ray.init()
-    trainer = ppo.PPOTrainer(env=elytraFlyer, config={
-        'env_config': {},           # No environment parameters to configure
-        'framework': 'torch',       # Use pyotrch instead of tensorflow
-        'num_gpus': 0,              # We aren't using GPUs
-        'num_workers': 0            # We aren't using parallelism
-    })
+    stepsPerCheckpoint = 1000 #change this to have more or less frequent saves
+    config = ppo.DEFAULT_CONFIG.copy()
+    config['env_config'] = {}
+    config['framework'] = 'torch'
+    config['num_gpus'] = 0
+    config['num_workers'] = 0
+    config['train_batch_size'] = stepsPerCheckpoint 
+    config['rollout_fragment_length'] = stepsPerCheckpoint
+    config['sgd_minibatch_size'] = stepsPerCheckpoint
+    trainer = ppo.PPOTrainer(env=elytraFlyer, config=config)
 
     while True:
-        print(trainer.train())
+        a = trainer.train()
+        saveLocation = trainer.save()
+        print(saveLocation)
+
+        
