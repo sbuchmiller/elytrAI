@@ -26,7 +26,7 @@ from ray.rllib.agents.a3c import a2c
 class elytraFlyer(gym.Env):
 
     def __init__(self, env_config, log_frequency = 1, move_mult = 50, ):
-        self.num_observations = 10
+        self.num_observations = 11
         self.log_frequency = 1
         self.move_mult = 50
         self.distance_reward_gamma = 0.02
