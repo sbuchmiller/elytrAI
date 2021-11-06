@@ -19,8 +19,8 @@ import gym
 import ray
 from gym.spaces import Discrete, Box
 #from ray.rllib.agents import ppo
-from ray.rllib.agents import sac
-#from ray.rllib.agents.a3c import a2c
+#from ray.rllib.agents import sac
+from ray.rllib.agents.a3c import a2c
 
 
 class elytraFlyer(gym.Env):
@@ -418,11 +418,12 @@ class elytraFlyer(gym.Env):
                 zPos = jsonLoad['ZPos']
 
                 # determine if damage was taken from hitting a pillar
+                damageTaken = 0
                 if yPos > 3:
                     self.damage_taken = 20 - jsonLoad['Life']
                     if self.damage_taken > 0:
                         self.damageFromLast20[0] = 1
-
+                damageTaken = self.damage_taken
                 # calculate velocities
                 xVelocity = xPos - self.lastx
                 yVelocity = yPos - self.lasty
@@ -434,7 +435,7 @@ class elytraFlyer(gym.Env):
                 self.lastz = zPos
 
                 # Create obs np array and return
-                obsList = [xPos, yPos, zPos, xVelocity, yVelocity, zVelocity, blockInSightDistance, blockInSightX, blockInSightY, blockInSightZ]
+                obsList = [xPos, yPos, zPos, xVelocity, yVelocity, zVelocity, blockInSightDistance, blockInSightX, blockInSightY, blockInSightZ, damageTaken]
                 obs = np.array(obsList)
                 break
 
@@ -502,14 +503,14 @@ if __name__ == '__main__':
 
     ray.init()
     stepsPerCheckpoint = 2500 #change this to have more or less frequent saves
-    config = sac.DEFAULT_CONFIG.copy()
+    config = {}
     config['framework'] = 'torch'
     config['num_gpus'] = 0
     config['num_workers'] = 0
-    #config['train_batch_size'] = stepsPerCheckpoint 
-    #config['rollout_fragment_length'] = stepsPerCheckpoint
+    config['train_batch_size'] = stepsPerCheckpoint 
+    config['rollout_fragment_length'] = stepsPerCheckpoint
     #config['sgd_minibatch_size'] = stepsPerCheckpoint
-    #config['batch_mode'] = 'complete_episodes'
+    config['batch_mode'] = 'complete_episodes'
 
     if loadPath != '':
         jsonFilePath = loadPath.split("\\")[:-1]
@@ -523,7 +524,7 @@ if __name__ == '__main__':
             config['env_config'] = {}
     else:
         config['env_config'] = {}
-    trainer = sac.SACTrainer(env=elytraFlyer, config=config)
+    trainer = a2c.A2CTrainer(env=elytraFlyer, config=config)
     if loadPath != '':
         trainer.restore(r""+loadPath)
     
