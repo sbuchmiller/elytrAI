@@ -57,14 +57,24 @@ class elytraFlyer(gym.Env):
         self.zvelocity = 0
         self.damage_taken = 0
 
-        self.episode_step = 0
-        self.episode_return = 0
-        self.returns = []
-        self.steps = []
-        self.episodes = []
-        self.flightDistances = []
-        self.damageTakenPercentLast20Episodes = []
-        self.damageFromLast20 = [0]*20 #array of 20 zeroes
+        if env_config == {}:
+            self.episode_step = 0
+            self.episode_return = 0
+            self.returns = []
+            self.steps = []
+            self.episodes = []
+            self.flightDistances = []
+            self.damageTakenPercentLast20Episodes = []
+            self.damageFromLast20 = [0]*20 #array of 20 zeroes
+        else:
+            self.episode_step = env_config["episode_step"]
+            self.episode_return = env_config["episode_return"]
+            self.returns = env_config["returns"]
+            self.steps = env_config["steps"]
+            self.episodes = env_config["episodes"]
+            self.flightDistances = env_config["flightDistances"]
+            self.damageTakenPercentLast20Episodes = env_config["damageTakenPercentLast20Episodes"]
+            self.damageFromLast20 = env_config["damageFromLast20"]
 
 
         # Set NP to print decimal numbers rather than scientific notation.
@@ -241,6 +251,68 @@ class elytraFlyer(gym.Env):
         """
         Log the current returns as a graph and text file
         """
+        self.log_returns_as_text()
+        self.log_returns_as_graph()
+        
+
+    def log_returns_as_text(self):
+        #log damage taken % in last 20 episodes
+        try:
+            with open('outputs/DamagePercent.txt', 'w') as f:
+                for step, value in zip(self.episodes[1:], self.damageTakenPercentLast20Episodes[1:]):
+                    f.write("{}\t{}\n".format(step, value))
+        except Exception as e:
+            print("unable to log damage taken Percent results in text")
+            print(e)
+
+        #log flight distances
+        try:
+            with open('outputs/DistanceFlown.txt', 'w') as f:
+                for step, value in zip(self.episodes[1:], self.flightDistances[1:]):
+                    f.write("{}\t{}\n".format(step, value))
+        except Exception as e:
+            print("unable to log flight distances in text")
+            print(e)
+
+        #log rewards per step
+        try:
+            with open('outputs/returns.txt', 'w') as f:
+                for step, value in zip(self.steps[1:], self.returns[1:]):
+                    f.write("{}\t{}\n".format(step, value))
+        except Exception as e:
+            print("unable to log rewards as text")
+            print(e)
+
+    def log_returns_as_graph(self):
+        #log damage taken % from last 20 flights
+        try:
+            #box = np.ones(self.log_frequency)/ self.log_frequency
+            #returns_smooth = np.convolve(self.episodes[1:], box, mode='same')
+            plt.clf()
+            plt.plot(self.episodes[1:], self.damageTakenPercentLast20Episodes[1:])
+            plt.title('Percent of episodes with damage taken in last 20 episodes')
+            plt.ylabel('Damage Percent')
+            plt.xlabel('Episodes')
+            plt.savefig('outputs/DamagePercent.png')
+            # Write to TXT file
+        except Exception as e:
+            print("unable to log damage taken Percent results")
+            print(e)
+
+        # Log the flight distances
+        try:
+            # Create graph
+            plt.clf()
+            plt.plot(self.episodes[1:], self.flightDistances[1:])
+            plt.title('Elytrai Distance Flown in Z direction')
+            plt.ylabel('Distance')
+            plt.xlabel('Episodes')
+            plt.savefig('outputs/DistanceFlown.png')
+
+            # Write to TXT file
+        except Exception as e:
+            print("unable to log flight distance results")
+            print(e)
 
         # Log the reward scores.
         try:
@@ -254,49 +326,14 @@ class elytraFlyer(gym.Env):
             plt.xlabel('Steps')
             plt.savefig('outputs/returns.png')
 
-            # Write to TXT file
-            with open('outputs/returns.txt', 'w') as f:
-                for step, value in zip(self.steps[1:], self.returns[1:]):
-                    f.write("{}\t{}\n".format(step, value))
-        except:
-            print("unable to log reward results")
 
-        # Log the flight distances
-        try:
-            # Create graph
-            plt.clf()
-            plt.plot(self.episodes[1:], self.flightDistances[1:])
-            plt.title('Elytrai Distance Flown in Z direction')
-            plt.ylabel('Distance')
-            plt.xlabel('Episodes')
-            plt.savefig('outputs/DistanceFlown.png')
-
-            # Write to TXT file
-            with open('outputs/DistanceFlown.txt', 'w') as f:
-                for step, value in zip(self.episodes[1:], self.flightDistances[1:]):
-                    f.write("{}\t{}\n".format(step, value))
-        except:
-            print("unable to log flight distance results")
-
-
-        #log damage taken % from last 20 flights
-        try:
-            #box = np.ones(self.log_frequency)/ self.log_frequency
-            #returns_smooth = np.convolve(self.episodes[1:], box, mode='same')
-            plt.clf()
-            plt.plot(self.episodes[1:], self.damageTakenPercentLast20Episodes[1:])
-            plt.title('Percent of episodes with damage taken in last 20 episodes')
-            plt.ylabel('Damage Percent')
-            plt.xlabel('Episodes')
-            plt.savefig('outputs/DamagePercent.png')
-            # Write to TXT file
-            with open('outputs/DamagePercent.txt', 'w') as f:
-                for step, value in zip(self.episodes[1:], self.damageTakenPercentLast20Episodes[1:]):
-                    f.write("{}\t{}\n".format(step, value))
         except Exception as e:
-            print("unable to log damage taken Percent results")
+            print("unable to log reward results")
             print(e)
 
+    def close(self):
+        print("Where would you like to save files")
+        print(input())
 
     def init_malmo(self):
         """
@@ -434,23 +471,71 @@ class elytraFlyer(gym.Env):
         self.agent_host.sendCommand("jump 0")
         time.sleep(.1)
 
+    def saveDataAsJson(self,location,fileName = "envVariables.json"):
+        envDict = {}
+        envDict["episode_step"] = self.episode_step
+        envDict["episode_return"] = self.episode_return
+        envDict["returns"] = self.returns 
+        envDict["steps"] = self.steps
+        envDict["episodes"] = self.episodes
+        envDict["flightDistances"] = self.flightDistances
+        envDict["damageTakenPercentLast20Episodes"] = self.damageTakenPercentLast20Episodes
+        envDict["damageFromLast20"] = self.damageFromLast20
+        try:
+            with open(location + "\\" +fileName, 'w+') as f:
+                json.dump(envDict,f)
+            print("json saved")
+        except Exception as e:
+            print("unable to save env as json")
+            print(e)
+            print(e.__traceback__)
+
+
 
 if __name__ == '__main__':
+    loadPath = ''
+    if len(sys.argv) > 1:
+        if sys.argv[1] == '-l':
+            print("loading file from path", sys.argv[2])
+            loadPath = sys.argv[2]
+            sys.argv = [sys.argv[0]]
+
     ray.init()
-    stepsPerCheckpoint = 1000 #change this to have more or less frequent saves
+    stepsPerCheckpoint = 2500 #change this to have more or less frequent saves
     config = ppo.DEFAULT_CONFIG.copy()
-    config['env_config'] = {}
     config['framework'] = 'torch'
     config['num_gpus'] = 0
     config['num_workers'] = 0
     config['train_batch_size'] = stepsPerCheckpoint 
     config['rollout_fragment_length'] = stepsPerCheckpoint
     config['sgd_minibatch_size'] = stepsPerCheckpoint
+    config['batch_mode'] = 'complete_episodes'
+
+    if loadPath != '':
+        jsonFilePath = loadPath.split("\\")[:-1]
+        jsonFilePath.append("envVariables.json")
+        jsonFilePath = "\\".join(jsonFilePath)
+        try:
+            with open(jsonFilePath, 'r') as f:
+                config['env_config'] = json.load(f)
+        except Exception as e:
+            print("could not read json file, creating new environment")
+            config['env_config'] = {}
+    else:
+        config['env_config'] = {}
     trainer = ppo.PPOTrainer(env=elytraFlyer, config=config)
+    trainer.restore(r""+loadPath)
+    
 
     while True:
         a = trainer.train()
         saveLocation = trainer.save()
         print(saveLocation)
+        jsonFileName = "envVariables.json"
+        folderLocation = saveLocation.split('\\')[:-1]
+        folderLocation = "\\".join(folderLocation)
+        trainer.workers.local_worker().env.saveDataAsJson(folderLocation)
+        print("json file saved to", folderLocation)
+        
 
         
