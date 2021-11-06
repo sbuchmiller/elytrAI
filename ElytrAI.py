@@ -252,7 +252,7 @@ class elytraFlyer(gym.Env):
         Log the current returns as a graph and text file
         """
         self.log_returns_as_text()
-        self.log_returns_as_graph()
+        #self.log_returns_as_graph()
         
 
     def log_returns_as_text(self):
