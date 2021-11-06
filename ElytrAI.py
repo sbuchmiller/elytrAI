@@ -37,8 +37,9 @@ class elytraFlyer(gym.Env):
         self.vision_width = 15
         self.vision_distance = 60
         self.vision_height = 30
-        self.pillarEffectRadius = 20
-        self.num_vision_observations = ((self.vision_width * 2) + 1) * (self.vision_distance + 1)
+        self.pillarEffectRadius = 10
+        self.pillarEffectLength = 20
+        self.num_vision_observations = 3
         self.num_observations = self.num_player_observations + self.num_vision_observations
 
         # RLlib params
@@ -72,6 +73,7 @@ class elytraFlyer(gym.Env):
         self.flightDistances = []
         self.damageTakenPercentLast20Episodes = []
         self.damageFromLast20 = [0]*20  # array of 20 zeroes
+        self.visionArea = None
 
         # Set NP to print decimal numbers rather than scientific notation.
         np.set_printoptions(suppress=True)
@@ -140,7 +142,7 @@ class elytraFlyer(gym.Env):
         self.agent_host.sendCommand(f"moveMouse {int(action[0] * self.move_mult)} {int(action[1] * self.move_mult)}")
 
         # Sleep and increment the episode by one
-        time.sleep(.1)
+        time.sleep(0.05)
         self.episode_step += 1
 
         # Take observation
@@ -166,9 +168,8 @@ class elytraFlyer(gym.Env):
         # Create gradient reward decrease around the poles. Less reward the closer steve is to the poles.
         steve_location_index = 6 + (self.vision_width * 2 + 1) + self.vision_width
 
-        reward *= self.obs[steve_location_index]
-        # print(f"step() - Step reward reduction multiplier = {self.obs[steve_location_index]}")
-        print(f"step() - Step reward = {reward}")
+        reward *= self.obs[7]
+        print(f"step() - Step reward reduction multiplier = {self.obs[7]:.2f}; step reward = {reward:.2f}")
 
 
         # add reward for this step to the episode return value.
@@ -362,7 +363,55 @@ class elytraFlyer(gym.Env):
 
         return outputArray
 
+    def convertFOVlistToNPArrayVShadowPenalizer(self, visionList):
+        """
+        Takes a list of blocks in within the agents field of view and converts it to an array of score decreasers that
+        are more penalizing the closer they are to a diamond_block
 
+        Args
+            visionList: <list> current agent field of view
+
+        Returns
+            visionList: <np.array> agent field of view as NP array of score penalizers.
+        """
+        total_width = self.vision_width * 2 + 1  # Total width of the agent vision
+        # how much less the score is reduced each block you get closer to the centerline of the pillar
+        reducPerBlockDist = 1 / self.pillarEffectRadius
+        visionListSize = len(visionList)  # size of the vision array
+        outputArray = np.ones((len(visionList),))  # Initialize NP array of size visionListSize to all 1s
+
+        # For each block in the item list
+        for i in range(visionListSize):
+            # If block is a diamond block
+            if visionList[i] == 'diamond_block':
+                # The multiplier at that exact location should be 0
+                outputArray[i] = 0
+
+                # For the self.pillarEffectLength number of rows before the pillar
+                for z in range(-self.pillarEffectLength, 1):
+
+                    # Calculate the index of the block that is at the center of row z directly inline with the pillar
+                    z_index_center = i + (total_width * z)
+
+                    # For each block in row z to the left and right of center that is within radius distance of
+                    # the center.
+                    for x in range(self.pillarEffectRadius):
+                        # Calculate the reduction multiplier based on how far off of the center block we are.
+                        reduction = reducPerBlockDist * x
+
+                        # If the index we are looking at is within bounds, apply the reduction
+                        if 0 <= z_index_center + x < visionListSize:
+                            outputArray[z_index_center + x] = min(outputArray[z_index_center + x], reduction)
+                        if 0 <= z_index_center - x < visionListSize:
+                            outputArray[z_index_center - x] = min(outputArray[z_index_center - x], reduction)
+        return outputArray
+
+    def getBlocksLeftRightOfPlayer(self):
+        totalVisionWidth = self.vision_width * 2 + 1  # Total width of the agent vision
+        indexOfWherePlayerIs = int(totalVisionWidth / 2)
+        return[self.visionArea[indexOfWherePlayerIs - 1],
+               self.visionArea[indexOfWherePlayerIs],
+               self.visionArea[indexOfWherePlayerIs + 1]]
 
     def init_malmo(self):
         """
@@ -417,26 +466,6 @@ class elytraFlyer(gym.Env):
                 msg = world_state.observations[-1].text
                 jsonLoad = json.loads(msg)
 
-                # Get the distance of the block at the center of screen. -1 if no block there
-                try:
-                    blockType = jsonLoad['LineOfSight']['type']
-                    if blockType == "diamond_block":
-                        blockInSightX = jsonLoad['LineOfSight']['x']
-                        blockInSightY = jsonLoad['LineOfSight']['x']
-                        blockInSightZ = jsonLoad['LineOfSight']['x']
-                        blockInSightDistance = jsonLoad['LineOfSight']['distance']
-                    else:
-                        blockInSightDistance = 10000
-                        blockInSightX = 10000
-                        blockInSightY = 10000
-                        blockInSightZ = 10000
-
-                except:
-                    blockInSightDistance = 10000
-                    blockInSightX = 10000
-                    blockInSightY = 10000
-                    blockInSightZ = 10000
-
                 # Get the X, Y, and Z positions of the agent
                 xPos = jsonLoad['XPos']
                 yPos = jsonLoad['YPos']
@@ -458,12 +487,15 @@ class elytraFlyer(gym.Env):
                 self.lasty = yPos
                 self.lastz = zPos
 
-                # Create obs np array and return
-                obsArray = np.array([xPos, yPos, zPos, xVelocity, yVelocity, zVelocity])
-
                 # Get the blocks around steve
-                blockArray = self.convertFOVlistToNPArrayReturPenalizers(jsonLoad['floorAll'])
-                obs = np.concatenate((obsArray, blockArray), axis=None)
+                self.visionArea = self.convertFOVlistToNPArrayVShadowPenalizer(jsonLoad['floorAll'])
+                blocksAroundPlayer = self.getBlocksLeftRightOfPlayer()
+                # print(f"get_observation() - blocksAroundPlayer = {blocksAroundPlayer}")
+
+                # Create obs np array and return
+                obs = np.array([xPos, yPos, zPos,
+                                xVelocity, yVelocity, zVelocity,
+                                blocksAroundPlayer[0], blocksAroundPlayer[1], blocksAroundPlayer[2]])
                 break
         return obs
 
