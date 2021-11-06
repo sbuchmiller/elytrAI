@@ -18,7 +18,8 @@ from numpy.random import randint
 import gym
 import ray
 from gym.spaces import Discrete, Box
-from ray.rllib.agents import ppo
+#from ray.rllib.agents import ppo
+from ray.rllib.agents import sac
 #from ray.rllib.agents.a3c import a2c
 
 
@@ -501,14 +502,14 @@ if __name__ == '__main__':
 
     ray.init()
     stepsPerCheckpoint = 2500 #change this to have more or less frequent saves
-    config = ppo.DEFAULT_CONFIG.copy()
+    config = sac.DEFAULT_CONFIG.copy()
     config['framework'] = 'torch'
     config['num_gpus'] = 0
     config['num_workers'] = 0
-    config['train_batch_size'] = stepsPerCheckpoint 
-    config['rollout_fragment_length'] = stepsPerCheckpoint
-    config['sgd_minibatch_size'] = stepsPerCheckpoint
-    config['batch_mode'] = 'complete_episodes'
+    #config['train_batch_size'] = stepsPerCheckpoint 
+    #config['rollout_fragment_length'] = stepsPerCheckpoint
+    #config['sgd_minibatch_size'] = stepsPerCheckpoint
+    #config['batch_mode'] = 'complete_episodes'
 
     if loadPath != '':
         jsonFilePath = loadPath.split("\\")[:-1]
@@ -522,7 +523,7 @@ if __name__ == '__main__':
             config['env_config'] = {}
     else:
         config['env_config'] = {}
-    trainer = ppo.PPOTrainer(env=elytraFlyer, config=config)
+    trainer = sac.SACTrainer(env=elytraFlyer, config=config)
     if loadPath != '':
         trainer.restore(r""+loadPath)
     
