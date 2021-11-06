@@ -484,7 +484,6 @@ class elytraFlyer(gym.Env):
         try:
             with open(location + "\\" +fileName, 'w+') as f:
                 json.dump(envDict,f)
-            print("json saved")
         except Exception as e:
             print("unable to save env as json")
             print(e)
@@ -524,18 +523,18 @@ if __name__ == '__main__':
     else:
         config['env_config'] = {}
     trainer = ppo.PPOTrainer(env=elytraFlyer, config=config)
-    trainer.restore(r""+loadPath)
+    if loadPath != '':
+        trainer.restore(r""+loadPath)
     
 
     while True:
         a = trainer.train()
         saveLocation = trainer.save()
-        print(saveLocation)
+        print("Checkpoint saved, Save Location is:",saveLocation)
         jsonFileName = "envVariables.json"
         folderLocation = saveLocation.split('\\')[:-1]
         folderLocation = "\\".join(folderLocation)
         trainer.workers.local_worker().env.saveDataAsJson(folderLocation)
-        print("json file saved to", folderLocation)
         
 
         
