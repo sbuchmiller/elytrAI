@@ -26,7 +26,7 @@ import tkinter as tk
 class elytraFlyer(gym.Env):
 
     def __init__(self, env_config, log_frequency=1, move_mult=50, ):
-        self.num_player_observations = 6
+        self.num_player_observations = 9
         self.log_frequency = 1
         self.move_mult = 50
         self.distance_reward_gamma = 0.02
@@ -36,17 +36,17 @@ class elytraFlyer(gym.Env):
         self.pillar_frequency = 0.0001
         self.pillar_touch_punishment = 0
 
-        self.testNumber = 10
+        self.testNumber = 11
 
         self.vision_width = 15
         self.vision_distance = 60
         self.vision_height = 30
-        self.pillarEffectRadius = 10
-        self.pillarEffectLength = 20
+        self.pillarEffectRadius = 12
+        self.pillarEffectLength = 22
         self.num_vision_observations = 3
         self.num_observations = self.num_player_observations + self.num_vision_observations
 
-        self.minScoreMultiplier = -1
+        self.minScoreMultiplier = 0
         self.maxScoreMultiplier = 1
 
         # RLlib params
@@ -71,6 +71,7 @@ class elytraFlyer(gym.Env):
         self.yvelocity = 0
         self.zvelocity = 0
         self.damage_taken = 0
+        self.current_multiplier = 1
 
         self.episode_step = 0
         self.episode_return = 0
@@ -83,6 +84,7 @@ class elytraFlyer(gym.Env):
         self.visionArea = None
         self.root = None
         self.canvas = None
+        self.damage_taken_mult = 1
 
         # Set NP to print decimal numbers rather than scientific notation.
         np.set_printoptions(suppress=True)
@@ -118,9 +120,13 @@ class elytraFlyer(gym.Env):
         # Set the value of the pillar_frequency slowly increasing the number of pillars over the course of the test
         # Maximum pillar frequency is self.max_pillar_frequency
         if currentEpisode // 100 == 0:
-            self.pillar_frequency = 0.0001
+            self.pillar_frequency = 0.001
         else:
             self.pillar_frequency = min(0.0001 * (currentEpisode // 100), self.max_pillar_frequency)
+
+        # Reset the damage multiplier and current multiplier
+        self.damage_taken_mult = 1
+        self.current_multiplier = 1
 
 
         # Log (Right now I have it logging after every flight
@@ -183,10 +189,10 @@ class elytraFlyer(gym.Env):
         reward += self.lastz * self.distance_reward_gamma
 
         # Create gradient reward decrease around the poles. Less reward the closer steve is to the poles.
-        steve_location_index = 6 + (self.vision_width * 2 + 1) + self.vision_width
+        # steve_location_index = 6 + (self.vision_width * 2 + 1) + self.vision_width
 
-        reward *= self.obs[7]
-        print(f"step() - Step reward reduction multiplier = {self.obs[7]:.2f}; step reward = {reward:.2f}")
+        reward = reward * self.current_multiplier * self.damage_taken_mult
+        print(f"step() - Step reward reduction multiplier = {self.current_multiplier:.2f}; step reward = {reward:.2f}")
 
 
         # add reward for this step to the episode return value.
@@ -489,11 +495,17 @@ class elytraFlyer(gym.Env):
                 yPos = jsonLoad['YPos']
                 zPos = jsonLoad['ZPos']
 
+                # Get Pitch and Yaw
+                yaw = jsonLoad['Yaw']
+                pitch = jsonLoad['Pitch']
+
+
                 # determine if damage was taken from hitting a pillar
                 if yPos > 3:
                     self.damage_taken = 20 - jsonLoad['Life']
                     if self.damage_taken > 0:
                         self.damageFromLast20[0] = 1
+                        self.damage_taken_mult = 0.5
 
                 # calculate velocities
                 xVelocity = xPos - self.lastx
@@ -507,12 +519,15 @@ class elytraFlyer(gym.Env):
 
                 # Get the blocks around steve
                 self.visionArea = self.convertFOVlistToNPArrayVShadowPenalizer(jsonLoad['floorAll'])
+                # self.visionArea = self.convertFOVlistToNPArrayReturPenalizers(jsonLoad['floorAll'])
                 blocksAroundPlayer = self.getBlocksLeftRightOfPlayer()
+                self.current_multiplier = blocksAroundPlayer[0]
                 # print(f"get_observation() - blocksAroundPlayer = {blocksAroundPlayer}")
 
                 # Create obs np array and return
                 obs = np.array([xPos, yPos, zPos,
                                 xVelocity, yVelocity, zVelocity,
+                                yaw, pitch, self.damage_taken,
                                 blocksAroundPlayer[0], blocksAroundPlayer[1], blocksAroundPlayer[2]])
                 break
         self.drawObs()
