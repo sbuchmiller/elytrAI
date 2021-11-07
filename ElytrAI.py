@@ -107,20 +107,21 @@ class elytraFlyer(gym.Env):
         currentStep = self.steps[-1] if len(self.steps) > 0 else 0
         self.steps.append(currentStep + self.episode_step)
 
-        # Set the value of the pillar_frequency slowly increasing the number of pillars over the course of the test
-        # Maximum pillar frequency is self.max_pillar_frequency
-        if currentStep // 100 == 0:
-            self.pillar_frequency = 0.0001
-        else:
-            self.pillar_frequency = min(0.0001 * (currentStep // 100), self.max_pillar_frequency)
-
         # Get the value of the current episode and append to the episodes list
         if len(self.episodes) > 0:
             currentEpisode = self.episodes[-1] + 1
         else:
             currentEpisode = 0
         self.episodes.append(currentEpisode)
-        self.damageTakenPercentLast20Episodes.append(sum(self.damageFromLast20)/20)
+        self.damageTakenPercentLast20Episodes.append(sum(self.damageFromLast20) / 20)
+
+        # Set the value of the pillar_frequency slowly increasing the number of pillars over the course of the test
+        # Maximum pillar frequency is self.max_pillar_frequency
+        if currentEpisode // 100 == 0:
+            self.pillar_frequency = 0.0001
+        else:
+            self.pillar_frequency = min(0.0001 * (currentEpisode // 100), self.max_pillar_frequency)
+
 
         # Log (Right now I have it logging after every flight
         # if len(self.returns) > self.log_frequency + 1 and \
