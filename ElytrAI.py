@@ -19,6 +19,7 @@ import gym
 import ray
 from gym.spaces import Discrete, Box
 from ray.rllib.agents import ppo
+import tkinter as tk
 #from ray.rllib.agents.a3c import a2c
 
 
@@ -31,8 +32,11 @@ class elytraFlyer(gym.Env):
         self.distance_reward_gamma = 0.02
         self.velocity_reward_gamma = 0.1
         self.damage_taken_reward_gamma = 10
-        self.pillar_frequency = 0.005
+        self.max_pillar_frequency = 0.005
+        self.pillar_frequency = 0.0001
         self.pillar_touch_punishment = 0
+
+        self.testNumber = 10
 
         self.vision_width = 15
         self.vision_distance = 60
@@ -41,6 +45,9 @@ class elytraFlyer(gym.Env):
         self.pillarEffectLength = 20
         self.num_vision_observations = 3
         self.num_observations = self.num_player_observations + self.num_vision_observations
+
+        self.minScoreMultiplier = -1
+        self.maxScoreMultiplier = 1
 
         # RLlib params
         self.action_space = Box(-1, 1, shape=(2,), dtype=np.float32)
@@ -74,6 +81,8 @@ class elytraFlyer(gym.Env):
         self.damageTakenPercentLast20Episodes = []
         self.damageFromLast20 = [0]*20  # array of 20 zeroes
         self.visionArea = None
+        self.root = None
+        self.canvas = None
 
         # Set NP to print decimal numbers rather than scientific notation.
         np.set_printoptions(suppress=True)
@@ -97,6 +106,13 @@ class elytraFlyer(gym.Env):
         # Get the value of the current step
         currentStep = self.steps[-1] if len(self.steps) > 0 else 0
         self.steps.append(currentStep + self.episode_step)
+
+        # Set the value of the pillar_frequency slowly increasing the number of pillars over the course of the test
+        # Maximum pillar frequency is self.max_pillar_frequency
+        if currentStep // 100 == 0:
+            self.pillar_frequency = 0.0001
+        else:
+            self.pillar_frequency = min(0.0001 * (currentStep // 100), self.max_pillar_frequency)
 
         # Get the value of the current episode and append to the episodes list
         if len(self.episodes) > 0:
@@ -258,10 +274,10 @@ class elytraFlyer(gym.Env):
             plt.title('Elytrai Flight Rewards')
             plt.ylabel('Return')
             plt.xlabel('Steps')
-            plt.savefig('outputs/returns.png')
+            plt.savefig(f'outputs/Test{str(self.testNumber)}-Returns.png')
 
             # Write to TXT file
-            with open('outputs/returns.txt', 'w') as f:
+            with open(f'outputs/Test{str(self.testNumber)}-Returns.txt', 'w') as f:
                 for step, value in zip(self.steps[1:], self.returns[1:]):
                     f.write("{}\t{}\n".format(step, value))
         except:
@@ -277,10 +293,10 @@ class elytraFlyer(gym.Env):
             plt.title('Elytrai Distance Flown in Z direction')
             plt.ylabel('Distance')
             plt.xlabel('Episodes')
-            plt.savefig('outputs/DistanceFlown.png')
+            plt.savefig(f'outputs/Test{str(self.testNumber)}-DistanceFlown.png')
 
             # Write to TXT file
-            with open('outputs/DistanceFlown.txt', 'w') as f:
+            with open(f"outputs/Test{str(self.testNumber)}-DistanceFlown.txt", 'w') as f:
                 for step, value in zip(self.episodes[1:], self.flightDistances[1:]):
                     f.write("{}\t{}\n".format(step, value))
         except:
@@ -375,17 +391,18 @@ class elytraFlyer(gym.Env):
             visionList: <np.array> agent field of view as NP array of score penalizers.
         """
         total_width = self.vision_width * 2 + 1  # Total width of the agent vision
+        scoreDif = self.maxScoreMultiplier - self.minScoreMultiplier  # Total difference between the min score multiplier and the max.
         # how much less the score is reduced each block you get closer to the centerline of the pillar
-        reducPerBlockDist = 1 / self.pillarEffectRadius
+        reducPerBlockDist = (1 / self.pillarEffectRadius) * scoreDif
         visionListSize = len(visionList)  # size of the vision array
-        outputArray = np.ones((len(visionList),))  # Initialize NP array of size visionListSize to all 1s
+        outputArray = np.ones((len(visionList),)) * self.maxScoreMultiplier  # Initialize NP array of size visionListSize to all max values.
 
         # For each block in the item list
         for i in range(visionListSize):
             # If block is a diamond block
             if visionList[i] == 'diamond_block':
                 # The multiplier at that exact location should be 0
-                outputArray[i] = 0
+                outputArray[i] = self.minScoreMultiplier
 
                 # For the self.pillarEffectLength number of rows before the pillar
                 for z in range(-self.pillarEffectLength, 1):
@@ -397,7 +414,7 @@ class elytraFlyer(gym.Env):
                     # the center.
                     for x in range(self.pillarEffectRadius):
                         # Calculate the reduction multiplier based on how far off of the center block we are.
-                        reduction = reducPerBlockDist * x
+                        reduction = self.minScoreMultiplier + reducPerBlockDist * x
 
                         # If the index we are looking at is within bounds, apply the reduction
                         if 0 <= z_index_center + x < visionListSize:
@@ -409,9 +426,9 @@ class elytraFlyer(gym.Env):
     def getBlocksLeftRightOfPlayer(self):
         totalVisionWidth = self.vision_width * 2 + 1  # Total width of the agent vision
         indexOfWherePlayerIs = int(totalVisionWidth / 2)
-        return[self.visionArea[indexOfWherePlayerIs - 1],
+        return[self.visionArea[indexOfWherePlayerIs + 1],
                self.visionArea[indexOfWherePlayerIs],
-               self.visionArea[indexOfWherePlayerIs + 1]]
+               self.visionArea[indexOfWherePlayerIs - 1]]
 
     def init_malmo(self):
         """
@@ -497,7 +514,49 @@ class elytraFlyer(gym.Env):
                                 xVelocity, yVelocity, zVelocity,
                                 blocksAroundPlayer[0], blocksAroundPlayer[1], blocksAroundPlayer[2]])
                 break
+        self.drawObs()
         return obs
+
+    def drawObs(self):
+        # Convert the flat observation array to a 2d array and flip it to match what is going on visually.
+        vArray = np.reshape(self.visionArea, (self.vision_distance + 1, self.vision_width * 2 + 1))
+        vArray = np.flip(vArray, axis=0)
+        vArray = np.flip(vArray, axis=1)
+
+        scale = 15
+        if self.canvas is None or self.root is None:
+            self.root = tk.Tk()
+            self.root.wm_title("Reward Field")
+            self.canvas = tk.Canvas(self.root, width=(self.vision_width * 2 + 1) * scale,
+                                    height=(self.vision_distance + 1) * scale, borderwidth=0,
+                                    highlightthickness=0, bg="black")
+            self.canvas.grid()
+            self.root.update()
+        self.canvas.delete("all")
+
+        # (NSWE to match action order)
+        for y in range(self.vision_distance + 1):
+            for x in range(self.vision_width * 2 + 1):
+                # Calculate the relative value of the colour between the min and max score multiplier values.
+                scoreWidth = self.maxScoreMultiplier - self.minScoreMultiplier
+                value = vArray[y][x]
+                value = (value - self.minScoreMultiplier) / scoreWidth
+
+                # Convert multiplication scores to color of green/red.
+                greenColour = int(255 * value)  # map value to 0-255
+                greenColour = max(min(greenColour, 255), 0)  # ensure within [0,255]
+                redColour = int(255 * (1 - value))  # map value to 0-255
+                redColour = max(min(redColour, 255), 0)  # ensure within [0,255]
+                color_string = '#%02x%02x%02x' % (redColour, greenColour, 0)
+
+                # Create the box with the given colour.
+                if y == self.vision_distance and x == self.vision_width:
+                    self.canvas.create_rectangle(x * scale, y * scale, (x + 1) * scale, (y + 1) * scale, outline="#fff",
+                                                 fill="#0000ff")
+                else:
+                    self.canvas.create_rectangle(x*scale, y*scale, (x+1)*scale, (y+1)*scale, outline="#fff",
+                                                 fill=color_string)
+        self.root.update()
 
     def clearObservationVariables(self):
         """
