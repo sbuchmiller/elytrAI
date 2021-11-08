@@ -47,7 +47,7 @@ class elytraFlyer(gym.Env):
         self.vision_height = 30
         self.pillarEffectRadius = 12
         self.pillarEffectLength = 22
-        self.num_vision_observations = 3
+        self.num_vision_observations = 0
         self.num_observations = self.num_player_observations + self.num_vision_observations
 
         self.minScoreMultiplier = 0
@@ -210,7 +210,7 @@ class elytraFlyer(gym.Env):
         # Create gradient reward decrease around the poles. Less reward the closer steve is to the poles.
         # steve_location_index = 6 + (self.vision_width * 2 + 1) + self.vision_width
 
-        reward = reward * self.current_multiplier * self.damage_taken_mult
+        reward = reward * self.damage_taken_mult
 
         # halve reward if a pillar has been hit
         if self.pillarTouchedDuringRun:
@@ -603,8 +603,8 @@ class elytraFlyer(gym.Env):
                 obs = np.array([xPos, yPos, zPos,
                                 xVelocity, yVelocity, zVelocity,
                                 yaw, pitch, self.pillarTouchedDuringRun,
-                                blockInSightDistance, blockInSightX, blockInSightY,blockInSightZ,
-                                blocksAroundPlayer[0], blocksAroundPlayer[1], blocksAroundPlayer[2]])
+                                blockInSightDistance, blockInSightX, blockInSightY,blockInSightZ])
+                                #blocksAroundPlayer[0], blocksAroundPlayer[1], blocksAroundPlayer[2]])
                 break
         self.drawObs()
         return obs
