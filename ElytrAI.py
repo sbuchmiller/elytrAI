@@ -19,13 +19,14 @@ import gym
 import ray
 from gym.spaces import Discrete, Box
 from ray.rllib.agents import ppo
+#from ray.rllib.agents import sac
 #from ray.rllib.agents.a3c import a2c
 
 
 class elytraFlyer(gym.Env):
 
     def __init__(self, env_config, log_frequency = 1, move_mult = 50, ):
-        self.num_observations = 10
+        self.num_observations = 13
         self.log_frequency = 1
         self.move_mult = 50
         self.distance_reward_gamma = 0.02
@@ -389,7 +390,6 @@ class elytraFlyer(gym.Env):
                 # Get observation json
                 msg = world_state.observations[-1].text
                 jsonLoad = json.loads(msg)
-                
 
                 # Get the distance of the block at the center of screen. -1 if no block there
                 try:
@@ -416,12 +416,17 @@ class elytraFlyer(gym.Env):
                 yPos = jsonLoad['YPos']
                 zPos = jsonLoad['ZPos']
 
+                #get the pitch and yaw that the agent is facing
+                pitch = jsonLoad['Pitch']
+                yaw = jsonLoad['Yaw']
+
                 # determine if damage was taken from hitting a pillar
+                damageTaken = 0
                 if yPos > 3:
                     self.damage_taken = 20 - jsonLoad['Life']
                     if self.damage_taken > 0:
                         self.damageFromLast20[0] = 1
-
+                damageTaken = self.damage_taken
                 # calculate velocities
                 xVelocity = xPos - self.lastx
                 yVelocity = yPos - self.lasty
@@ -433,7 +438,7 @@ class elytraFlyer(gym.Env):
                 self.lastz = zPos
 
                 # Create obs np array and return
-                obsList = [xPos, yPos, zPos, xVelocity, yVelocity, zVelocity, blockInSightDistance, blockInSightX, blockInSightY, blockInSightZ]
+                obsList = [xPos, yPos, zPos, xVelocity, yVelocity, zVelocity, blockInSightDistance, blockInSightX, blockInSightY, blockInSightZ, damageTaken, pitch, yaw]
                 obs = np.array(obsList)
                 break
 
@@ -501,7 +506,7 @@ if __name__ == '__main__':
 
     ray.init()
     stepsPerCheckpoint = 2500 #change this to have more or less frequent saves
-    config = ppo.DEFAULT_CONFIG.copy()
+    config = {}
     config['framework'] = 'torch'
     config['num_gpus'] = 0
     config['num_workers'] = 0
