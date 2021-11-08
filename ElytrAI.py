@@ -606,7 +606,7 @@ class elytraFlyer(gym.Env):
                                 blockInSightDistance, blockInSightX, blockInSightY,blockInSightZ])
                                 #blocksAroundPlayer[0], blocksAroundPlayer[1], blocksAroundPlayer[2]])
                 break
-        self.drawObs()
+        #self.drawObs()
         return obs
 
     def drawObs(self):
