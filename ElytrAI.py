@@ -139,7 +139,8 @@ class elytraFlyer(gym.Env):
         if currentEpisode // self.pillar_freq_inc_delta == 0:
             self.current_pillar_frequency = self.start_pillar_frequency
         else:
-            self.current_pillar_frequency = min(0.0001 * (currentEpisode // self.pillar_freq_inc_delta), self.max_pillar_frequency)
+            self.current_pillar_frequency =  min(self.start_pillar_frequency + (0.0001 * (currentEpisode // self.pillar_freq_inc_delta)),
+                                                self.max_pillar_frequency)
 
         # Reset the damage multiplier and current multiplier
         self.damage_taken_mult = 1
@@ -205,7 +206,7 @@ class elytraFlyer(gym.Env):
         reward = 0
 
         # Reward for going far in the Z direction
-        reward += self.obs[5]*self.distance_reward_gamma
+        reward += self.obs[2]*self.distance_reward_gamma
 
         # Create gradient reward decrease around the poles. Less reward the closer steve is to the poles.
         # steve_location_index = 6 + (self.vision_width * 2 + 1) + self.vision_width
@@ -676,7 +677,7 @@ class elytraFlyer(gym.Env):
         time.sleep(.1)
         self.agent_host.sendCommand("jump 0")
         self.agent_host.sendCommand("forward 0")
-        time.sleep(1)
+        time.sleep(0.7)
         self.agent_host.sendCommand("jump 1")
         time.sleep(.1)
         self.agent_host.sendCommand("jump 0")
