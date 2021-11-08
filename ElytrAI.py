@@ -1,5 +1,5 @@
-#CS175 Fall 2021 Project
-#Creators: Alec Grogan-Crane, Alexandria Meng, Scott Buchmiller
+# CS175 Fall 2021 Project
+# Creators: Alec Grogan-Crane, Alexandria Meng, Scott Buchmiller
 
 
 try:
@@ -19,20 +19,22 @@ import gym
 import ray
 from gym.spaces import Discrete, Box
 from ray.rllib.agents import ppo
+#from ray.rllib.agents import sac
 #from ray.rllib.agents.a3c import a2c
 
 
 class elytraFlyer(gym.Env):
 
-    def __init__(self, env_config, log_frequency=1, move_mult=50, ):
-        self.num_player_observations = 6
+    def __init__(self, env_config, log_frequency = 1, move_mult = 50, ):
+        self.num_observations = 13
         self.log_frequency = 1
         self.move_mult = 50
         self.distance_reward_gamma = 0.02
         self.velocity_reward_gamma = 0.1
         self.damage_taken_reward_gamma = 10
         self.pillar_frequency = 0.005
-        self.pillar_touch_punishment = 0
+        self.pillar_touch_flag = 0.69420
+        self.pillar_touch_penalty = 0.5
 
         self.vision_width = 15
         self.vision_distance = 60
@@ -62,19 +64,32 @@ class elytraFlyer(gym.Env):
         self.xvelocity = 0
         self.yvelocity = 0
         self.zvelocity = 0
-        self.damage_taken = 0
+        self.pillarTouchedDuringRun = 0
 
-        self.episode_step = 0
-        self.episode_return = 0
-        self.returns = []
-        self.steps = []
-        self.episodes = []
-        self.flightDistances = []
-        self.damageTakenPercentLast20Episodes = []
-        self.damageFromLast20 = [0]*20  # array of 20 zeroes
+        if env_config == {}:
+            self.episode_step = 0
+            self.episode_return = 0
+            self.returns = []
+            self.steps = []
+            self.episodes = []
+            self.flightDistances = []
+            self.pillarTouchedPercentLast20Episodes = []
+            self.pillarTouchedFromLast20 = [0]*20 #array of 20 zeroes
+        else:
+            self.episode_step = env_config["episode_step"]
+            self.episode_return = env_config["episode_return"]
+            self.returns = env_config["returns"]
+            self.steps = env_config["steps"]
+            self.episodes = env_config["episodes"]
+            self.flightDistances = env_config["flightDistances"]
+            self.pillarTouchedPercentLast20Episodes = env_config["pillarTouchedPercentLast20Episodes"]
+            self.pillarTouchedFromLast20 = env_config["pillarTouchedFromLast20"]
+
 
         # Set NP to print decimal numbers rather than scientific notation.
         np.set_printoptions(suppress=True)
+
+        self.ranOnce = False
 
     def reset(self):
         """
@@ -102,7 +117,7 @@ class elytraFlyer(gym.Env):
         else:
             currentEpisode = 0
         self.episodes.append(currentEpisode)
-        self.damageTakenPercentLast20Episodes.append(sum(self.damageFromLast20)/20)
+        self.pillarTouchedPercentLast20Episodes.append(sum(self.pillarTouchedFromLast20)/20)
 
         # Log (Right now I have it logging after every flight
         # if len(self.returns) > self.log_frequency + 1 and \
@@ -143,10 +158,19 @@ class elytraFlyer(gym.Env):
         time.sleep(.1)
         self.episode_step += 1
 
+
+
         # Take observation
         world_state = self.agent_host.getWorldState()
         for error in world_state.errors:
             print("Error:", error.text)
+
+        # determines if a pillar was hit during this run
+        for r in world_state.rewards:
+            if r.getValue() != 0:
+                if r.getValue() == self.pillar_touch_flag:
+                    self.pillarTouchedDuringRun = 1
+        # get the observations for this step
         self.obs = self.get_observation(world_state)
 
         # Check if mission ended
@@ -154,14 +178,9 @@ class elytraFlyer(gym.Env):
 
         # Get Reward
         reward = 0
-        # Get's rewards defined in XML (We have none right now)
-        for r in world_state.rewards:
-            if r.getValue() != 0:
-                # print(f"step() - Punish for touching diamond_block = {r.getValue()}")
-                reward += r.getValue()
 
         # Reward for going far in the Z direction
-        reward += self.lastz * self.distance_reward_gamma
+        reward += self.obs[5]*self.distance_reward_gamma
 
         # Create gradient reward decrease around the poles. Less reward the closer steve is to the poles.
         steve_location_index = 6 + (self.vision_width * 2 + 1) + self.vision_width
@@ -170,6 +189,9 @@ class elytraFlyer(gym.Env):
         # print(f"step() - Step reward reduction multiplier = {self.obs[steve_location_index]}")
         print(f"step() - Step reward = {reward}")
 
+        # halve reward if a pillar has been hit
+        if self.pillarTouchedDuringRun:
+            reward *= self.pillar_touch_penalty
 
         # add reward for this step to the episode return value.
         self.episode_return += reward
@@ -234,18 +256,77 @@ class elytraFlyer(gym.Env):
                         </ObservationFromGrid>
                         <RewardForTouchingBlockType>
                             ''' + \
-                            f'<Block reward="{self.pillar_touch_punishment}" type="diamond_block"/>' + ''' 
+                            f'<Block reward="{self.pillar_touch_flag}" type="diamond_block"/>' + ''' 
                         </RewardForTouchingBlockType>  
                     </AgentHandlers>
                 </AgentSection>
                 </Mission>
                 '''
 
-
     def log_returns(self):
         """
         Log the current returns as a graph and text file
         """
+        self.log_returns_as_text()
+        #self.log_returns_as_graph()
+        
+
+    def log_returns_as_text(self):
+        #log damage taken % in last 20 episodes
+        try:
+            with open('outputs/PillarTouched.txt', 'w') as f:
+                for step, value in zip(self.episodes[1:], self.pillarTouchedPercentLast20Episodes[1:]):
+                    f.write("{}\t{}\n".format(step, value))
+        except Exception as e:
+            print("unable to log pillar touched Percent results in text")
+            print(e)
+
+        #log flight distances
+        try:
+            with open('outputs/DistanceFlown.txt', 'w') as f:
+                for step, value in zip(self.episodes[1:], self.flightDistances[1:]):
+                    f.write("{}\t{}\n".format(step, value))
+        except Exception as e:
+            print("unable to log flight distances in text")
+            print(e)
+
+        #log rewards per step
+        try:
+            with open('outputs/returns.txt', 'w') as f:
+                for step, value in zip(self.steps[1:], self.returns[1:]):
+                    f.write("{}\t{}\n".format(step, value))
+        except Exception as e:
+            print("unable to log rewards as text")
+            print(e)
+
+    def log_returns_as_graph(self):
+        #log pillar touched % from last 20 flights
+        try:
+            plt.clf()
+            plt.plot(self.episodes[1:], self.damageTakenPercentLast20Episodes[1:])
+            plt.title('Percent of episodes with a pillar touched in last 20 episodes')
+            plt.ylabel('Pillar Touched Percent')
+            plt.xlabel('Episodes')
+            plt.savefig('outputs/PillarTouchedPercent.png')
+            # Write to TXT file
+        except Exception as e:
+            print("unable to log pillar touched taken Percent results")
+            print(e)
+
+        # Log the flight distances
+        try:
+            # Create graph
+            plt.clf()
+            plt.plot(self.episodes[1:], self.flightDistances[1:])
+            plt.title('Elytrai Distance Flown in Z direction')
+            plt.ylabel('Distance')
+            plt.xlabel('Episodes')
+            plt.savefig('outputs/DistanceFlown.png')
+
+            # Write to TXT file
+        except Exception as e:
+            print("unable to log flight distance results")
+            print(e)
 
         # Log the reward scores.
         try:
@@ -259,31 +340,10 @@ class elytraFlyer(gym.Env):
             plt.xlabel('Steps')
             plt.savefig('outputs/returns.png')
 
-            # Write to TXT file
-            with open('outputs/returns.txt', 'w') as f:
-                for step, value in zip(self.steps[1:], self.returns[1:]):
-                    f.write("{}\t{}\n".format(step, value))
-        except:
+
+        except Exception as e:
             print("unable to log reward results")
-
-        # Log the flight distances
-        try:
-            # Create graph
-            #box = np.ones(self.log_frequency) / self.log_frequency
-            #returns_smooth = np.convolve(self.flightDistances[1:], box, mode='same')
-            plt.clf()
-            plt.plot(self.episodes[1:], self.flightDistances[1:])
-            plt.title('Elytrai Distance Flown in Z direction')
-            plt.ylabel('Distance')
-            plt.xlabel('Episodes')
-            plt.savefig('outputs/DistanceFlown.png')
-
-            # Write to TXT file
-            with open('outputs/DistanceFlown.txt', 'w') as f:
-                for step, value in zip(self.episodes[1:], self.flightDistances[1:]):
-                    f.write("{}\t{}\n".format(step, value))
-        except:
-            print("unable to log flight distance results")
+            print(e)
 
 
     def convertFOVlistToNPArray1s0s(self, visionList):
@@ -361,8 +421,6 @@ class elytraFlyer(gym.Env):
                             outputArray[z_index_center - x] = reduction
 
         return outputArray
-
-
 
     def init_malmo(self):
         """
@@ -442,11 +500,14 @@ class elytraFlyer(gym.Env):
                 yPos = jsonLoad['YPos']
                 zPos = jsonLoad['ZPos']
 
+                #get the pitch and yaw that the agent is facing
+                pitch = jsonLoad['Pitch']
+                yaw = jsonLoad['Yaw']
+
                 # determine if damage was taken from hitting a pillar
                 if yPos > 3:
-                    self.damage_taken = 20 - jsonLoad['Life']
-                    if self.damage_taken > 0:
-                        self.damageFromLast20[0] = 1
+                    if self.pillarTouchedDuringRun and self.pillarTouchedFromLast20[0] == 0:
+                        self.pillarTouchedFromLast20[0] = 1
 
                 # calculate velocities
                 xVelocity = xPos - self.lastx
@@ -459,7 +520,9 @@ class elytraFlyer(gym.Env):
                 self.lastz = zPos
 
                 # Create obs np array and return
-                obsArray = np.array([xPos, yPos, zPos, xVelocity, yVelocity, zVelocity])
+                obsList = [xPos, yPos, zPos, xVelocity, yVelocity, zVelocity, blockInSightDistance, blockInSightX, blockInSightY, blockInSightZ, self.pillarTouchedDuringRun, pitch, yaw]
+                obs = np.array(obsList)
+                break
 
                 # Get the blocks around steve
                 blockArray = self.convertFOVlistToNPArrayReturPenalizers(jsonLoad['floorAll'])
@@ -477,11 +540,11 @@ class elytraFlyer(gym.Env):
         self.xvelocity = 0
         self.yvelocity = 0
         self.zvelocity = 0
-        self.damage_taken = 0
+        self.pillarTouchedDuringRun = 0
 
-        if len(self.damageFromLast20) >= 20:
-            self.damageFromLast20 = self.damageFromLast20[:-1]
-            self.damageFromLast20.insert(0, 0)
+        if len(self.pillarTouchedFromLast20) >= 20:
+            self.pillarTouchedFromLast20 = self.pillarTouchedFromLast20[:-1]
+            self.pillarTouchedFromLast20.insert(0,0)
 
     def agentJumpOffStartingBlock(self):
         """
@@ -499,15 +562,70 @@ class elytraFlyer(gym.Env):
         self.agent_host.sendCommand("jump 0")
         time.sleep(.1)
 
+    def saveDataAsJson(self,location,fileName = "envVariables.json"):
+        envDict = {}
+        envDict["episode_step"] = self.episode_step
+        envDict["episode_return"] = self.episode_return
+        envDict["returns"] = self.returns 
+        envDict["steps"] = self.steps
+        envDict["episodes"] = self.episodes
+        envDict["flightDistances"] = self.flightDistances
+        envDict["pillarTouchedPercentLast20Episodes"] = self.pillarTouchedPercentLast20Episodes
+        envDict["pillarTouchedFromLast20"] = self.pillarTouchedFromLast20
+        try:
+            with open(location + "\\" +fileName, 'w+') as f:
+                json.dump(envDict,f)
+        except Exception as e:
+            print("unable to save env as json")
+            print(e)
+            print(e.__traceback__)
+
+
 
 if __name__ == '__main__':
+    loadPath = ''
+    if len(sys.argv) > 1:
+        if sys.argv[1] == '-l':
+            print("loading file from path", sys.argv[2])
+            loadPath = sys.argv[2]
+            sys.argv = [sys.argv[0]]
+
     ray.init()
-    trainer = ppo.PPOTrainer(env=elytraFlyer, config={
-        'env_config': {},           # No environment parameters to configure
-        'framework': 'torch',       # Use pyotrch instead of tensorflow
-        'num_gpus': 0,              # We aren't using GPUs
-        'num_workers': 0            # We aren't using parallelism
-    })
+    stepsPerCheckpoint = 2500 #change this to have more or less frequent saves
+    config = {}
+    config['framework'] = 'torch'
+    config['num_gpus'] = 0
+    config['num_workers'] = 0
+    config['train_batch_size'] = stepsPerCheckpoint 
+    config['rollout_fragment_length'] = stepsPerCheckpoint
+    config['sgd_minibatch_size'] = stepsPerCheckpoint
+    config['batch_mode'] = 'complete_episodes'
+
+    if loadPath != '':
+        jsonFilePath = loadPath.split("\\")[:-1]
+        jsonFilePath.append("envVariables.json")
+        jsonFilePath = "\\".join(jsonFilePath)
+        try:
+            with open(jsonFilePath, 'r') as f:
+                config['env_config'] = json.load(f)
+        except Exception as e:
+            print("could not read json file, creating new environment")
+            config['env_config'] = {}
+    else:
+        config['env_config'] = {}
+    trainer = ppo.PPOTrainer(env=elytraFlyer, config=config)
+    if loadPath != '':
+        trainer.restore(r""+loadPath)
+    
 
     while True:
-        print(trainer.train())
+        a = trainer.train()
+        saveLocation = trainer.save()
+        print("Checkpoint saved, Save Location is:",saveLocation)
+        jsonFileName = "envVariables.json"
+        folderLocation = saveLocation.split('\\')[:-1]
+        folderLocation = "\\".join(folderLocation)
+        trainer.workers.local_worker().env.saveDataAsJson(folderLocation)
+        
+
+        
