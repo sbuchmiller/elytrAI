@@ -1,5 +1,5 @@
-#CS175 Fall 2021 Project
-#Creators: Alec Grogan-Crane, Alexandria Meng, Scott Buchmiller
+# CS175 Fall 2021 Project
+# Creators: Alec Grogan-Crane, Alexandria Meng, Scott Buchmiller
 
 
 try:
@@ -33,7 +33,8 @@ class elytraFlyer(gym.Env):
         self.velocity_reward_gamma = 0.1
         self.damage_taken_reward_gamma = 10
         self.pillar_frequency = 0.005
-        self.pillar_touch_punishment = 0
+        self.pillar_touch_flag = 0.69420
+        self.pillar_touch_penalty = 0.5
 
         # RLlib params
         self.action_space = Box(-2, 2, shape=(2,), dtype=np.float32)
@@ -56,7 +57,7 @@ class elytraFlyer(gym.Env):
         self.xvelocity = 0
         self.yvelocity = 0
         self.zvelocity = 0
-        self.damage_taken = 0
+        self.pillarTouchedDuringRun = 0
 
         if env_config == {}:
             self.episode_step = 0
@@ -65,8 +66,8 @@ class elytraFlyer(gym.Env):
             self.steps = []
             self.episodes = []
             self.flightDistances = []
-            self.damageTakenPercentLast20Episodes = []
-            self.damageFromLast20 = [0]*20 #array of 20 zeroes
+            self.pillarTouchedPercentLast20Episodes = []
+            self.pillarTouchedFromLast20 = [0]*20 #array of 20 zeroes
         else:
             self.episode_step = env_config["episode_step"]
             self.episode_return = env_config["episode_return"]
@@ -74,8 +75,8 @@ class elytraFlyer(gym.Env):
             self.steps = env_config["steps"]
             self.episodes = env_config["episodes"]
             self.flightDistances = env_config["flightDistances"]
-            self.damageTakenPercentLast20Episodes = env_config["damageTakenPercentLast20Episodes"]
-            self.damageFromLast20 = env_config["damageFromLast20"]
+            self.pillarTouchedPercentLast20Episodes = env_config["pillarTouchedPercentLast20Episodes"]
+            self.pillarTouchedFromLast20 = env_config["pillarTouchedFromLast20"]
 
 
         # Set NP to print decimal numbers rather than scientific notation.
@@ -109,7 +110,7 @@ class elytraFlyer(gym.Env):
         else:
             currentEpisode = 0
         self.episodes.append(currentEpisode)
-        self.damageTakenPercentLast20Episodes.append(sum(self.damageFromLast20)/20)
+        self.pillarTouchedPercentLast20Episodes.append(sum(self.pillarTouchedFromLast20)/20)
 
         # Log (Right now I have it logging after every flight
         # if len(self.returns) > self.log_frequency + 1 and \
@@ -150,10 +151,19 @@ class elytraFlyer(gym.Env):
         time.sleep(.1)
         self.episode_step += 1
 
+
+
         # Take observation
         world_state = self.agent_host.getWorldState()
         for error in world_state.errors:
             print("Error:", error.text)
+
+        # determines if a pillar was hit during this run
+        for r in world_state.rewards:
+            if r.getValue() != 0:
+                if r.getValue() == self.pillar_touch_flag:
+                    self.pillarTouchedDuringRun = 1
+        # get the observations for this step
         self.obs = self.get_observation(world_state)
 
         # Check if mission ended
@@ -161,30 +171,19 @@ class elytraFlyer(gym.Env):
 
         # Get Reward
         reward = 0
-        # Get's rewards defined in XML
-        for r in world_state.rewards:
-            if r.getValue() != 0:
-                # print(f"step() - Punish for touching diamond_block = {r.getValue()}")
-                reward += r.getValue()
 
-        #get additional rewards
+        
 
-            # Reward for going far in the Z direction
+
+        # Reward for going far in the Z direction
         reward += self.obs[2] * self.distance_reward_gamma
 
-
-        # Punish for hitting a pillar in midflight
-        """
-        if self.obs[1] > 3:
-            punishment = self.damage_taken * self.damage_taken_reward_gamma
-            if punishment != 0:
-                reward -= punishment
-                # print(f"step() - Punishment for taking damage = -{punishment}")
-        """
+        # halve reward if a pillar has been hit
+        if self.pillarTouchedDuringRun:
+            reward *= self.pillar_touch_penalty
 
         # add reward for this step to the episode return value.
         self.episode_return += reward
-        #print(f"step() - Episode Return so far = {self.episode_return}")
         return self.obs, reward, done, dict()
 
     def getPillarLocations(self, width=300, length=1000):
@@ -241,7 +240,7 @@ class elytraFlyer(gym.Env):
                         <ObservationFromRay/>
                         <RewardForTouchingBlockType>
                             ''' + \
-                            f'<Block reward="{self.pillar_touch_punishment}" type="diamond_block"/>' + ''' 
+                            f'<Block reward="{self.pillar_touch_flag}" type="diamond_block"/>' + ''' 
                         </RewardForTouchingBlockType>  
                     </AgentHandlers>
                 </AgentSection>
@@ -259,11 +258,11 @@ class elytraFlyer(gym.Env):
     def log_returns_as_text(self):
         #log damage taken % in last 20 episodes
         try:
-            with open('outputs/DamagePercent.txt', 'w') as f:
-                for step, value in zip(self.episodes[1:], self.damageTakenPercentLast20Episodes[1:]):
+            with open('outputs/PillarTouched.txt', 'w') as f:
+                for step, value in zip(self.episodes[1:], self.pillarTouchedPercentLast20Episodes[1:]):
                     f.write("{}\t{}\n".format(step, value))
         except Exception as e:
-            print("unable to log damage taken Percent results in text")
+            print("unable to log pillar touched Percent results in text")
             print(e)
 
         #log flight distances
@@ -285,19 +284,17 @@ class elytraFlyer(gym.Env):
             print(e)
 
     def log_returns_as_graph(self):
-        #log damage taken % from last 20 flights
+        #log pillar touched % from last 20 flights
         try:
-            #box = np.ones(self.log_frequency)/ self.log_frequency
-            #returns_smooth = np.convolve(self.episodes[1:], box, mode='same')
             plt.clf()
             plt.plot(self.episodes[1:], self.damageTakenPercentLast20Episodes[1:])
-            plt.title('Percent of episodes with damage taken in last 20 episodes')
-            plt.ylabel('Damage Percent')
+            plt.title('Percent of episodes with a pillar touched in last 20 episodes')
+            plt.ylabel('Pillar Touched Percent')
             plt.xlabel('Episodes')
-            plt.savefig('outputs/DamagePercent.png')
+            plt.savefig('outputs/PillarTouchedPercent.png')
             # Write to TXT file
         except Exception as e:
-            print("unable to log damage taken Percent results")
+            print("unable to log pillar touched taken Percent results")
             print(e)
 
         # Log the flight distances
@@ -331,10 +328,6 @@ class elytraFlyer(gym.Env):
         except Exception as e:
             print("unable to log reward results")
             print(e)
-
-    def close(self):
-        print("Where would you like to save files")
-        print(input())
 
     def init_malmo(self):
         """
@@ -421,12 +414,10 @@ class elytraFlyer(gym.Env):
                 yaw = jsonLoad['Yaw']
 
                 # determine if damage was taken from hitting a pillar
-                damageTaken = 0
                 if yPos > 3:
-                    self.damage_taken = 20 - jsonLoad['Life']
-                    if self.damage_taken > 0:
-                        self.damageFromLast20[0] = 1
-                damageTaken = self.damage_taken
+                    if self.pillarTouchedDuringRun and self.pillarTouchedFromLast20[0] == 0:
+                        self.pillarTouchedFromLast20[0] = 1
+
                 # calculate velocities
                 xVelocity = xPos - self.lastx
                 yVelocity = yPos - self.lasty
@@ -438,7 +429,7 @@ class elytraFlyer(gym.Env):
                 self.lastz = zPos
 
                 # Create obs np array and return
-                obsList = [xPos, yPos, zPos, xVelocity, yVelocity, zVelocity, blockInSightDistance, blockInSightX, blockInSightY, blockInSightZ, damageTaken, pitch, yaw]
+                obsList = [xPos, yPos, zPos, xVelocity, yVelocity, zVelocity, blockInSightDistance, blockInSightX, blockInSightY, blockInSightZ, self.pillarTouchedDuringRun, pitch, yaw]
                 obs = np.array(obsList)
                 break
 
@@ -454,11 +445,11 @@ class elytraFlyer(gym.Env):
         self.xvelocity = 0
         self.yvelocity = 0
         self.zvelocity = 0
-        self.damage_taken = 0
+        self.pillarTouchedDuringRun = 0
 
-        if len(self.damageFromLast20) >= 20:
-            self.damageFromLast20 = self.damageFromLast20[:-1]
-            self.damageFromLast20.insert(0,0)
+        if len(self.pillarTouchedFromLast20) >= 20:
+            self.pillarTouchedFromLast20 = self.pillarTouchedFromLast20[:-1]
+            self.pillarTouchedFromLast20.insert(0,0)
 
     def agentJumpOffStartingBlock(self):
         """
@@ -484,8 +475,8 @@ class elytraFlyer(gym.Env):
         envDict["steps"] = self.steps
         envDict["episodes"] = self.episodes
         envDict["flightDistances"] = self.flightDistances
-        envDict["damageTakenPercentLast20Episodes"] = self.damageTakenPercentLast20Episodes
-        envDict["damageFromLast20"] = self.damageFromLast20
+        envDict["pillarTouchedPercentLast20Episodes"] = self.pillarTouchedPercentLast20Episodes
+        envDict["pillarTouchedFromLast20"] = self.pillarTouchedFromLast20
         try:
             with open(location + "\\" +fileName, 'w+') as f:
                 json.dump(envDict,f)
