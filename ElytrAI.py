@@ -1,5 +1,5 @@
-#CS175 Fall 2021 Project
-#Creators: Alec Grogan-Crane, Alexandria Meng, Scott Buchmiller
+# CS175 Fall 2021 Project
+# Creators: Alec Grogan-Crane, Alexandria Meng, Scott Buchmiller
 
 
 try:
@@ -11,7 +11,6 @@ import os
 import sys
 import time
 import json
-import math
 from priority_dict import priorityDictionary as PQ
 import matplotlib.pyplot as plt
 import numpy as np
@@ -20,20 +19,24 @@ import gym
 import ray
 from gym.spaces import Discrete, Box
 from ray.rllib.agents import ppo
-# from ray.rllib.agents import a2c
+
+
+# from ray.rllib.agents.a3c import a2c
 
 
 class elytraFlyer(gym.Env):
 
-    def __init__(self, env_config):
-        self.num_observations = 7
+    def __init__(self, env_config, log_frequency=1, move_mult=50, ):
+        self.num_observations = 10
         self.log_frequency = 1
         self.move_mult = 50
         self.distance_reward_gamma = 0.02
         self.velocity_reward_gamma = 0.1
-        self.damage_taken_reward_gamma = 10 #original is 10
+        self.damage_taken_reward_gamma = 10
         self.pillar_frequency = 0.005
-        self.glide_reward_gamma = 0.05
+        self.pillar_touch_punishment = 0
+        self.platform_reward_gamma = 0.01
+        self.saved_plat_reward = 0
 
         # RLlib params
         self.action_space = Box(-2, 2, shape=(2,), dtype=np.float32)
@@ -57,25 +60,44 @@ class elytraFlyer(gym.Env):
         self.yvelocity = 0
         self.zvelocity = 0
         self.damage_taken = 0
-        self.reward_ratio = 0
-        self.optimal_ratio = 0
 
-        self.episode_step = 0
-        self.episode_return = 0
-        self.returns = []
-        self.steps = []
-        self.episodes = []
-        self.flightDistances = []
-        self.recordedRatios = []
+        self.platx = 0
+        self.platy = 2
+        self.platz = 0
+
+        if env_config == {}:
+            self.episode_step = 0
+            self.episode_return = 0
+            self.returns = []
+            self.steps = []
+            self.episodes = []
+            self.flightDistances = []
+            self.damageTakenPercentLast20Episodes = []
+            self.damageFromLast20 = [0] * 20  # array of 20 zeroes
+            self.platformRewards = []
+        else:
+            self.episode_step = env_config["episode_step"]
+            self.episode_return = env_config["episode_return"]
+            self.returns = env_config["returns"]
+            self.steps = env_config["steps"]
+            self.episodes = env_config["episodes"]
+            self.flightDistances = env_config["flightDistances"]
+            self.damageTakenPercentLast20Episodes = env_config["damageTakenPercentLast20Episodes"]
+            self.damageFromLast20 = env_config["damageFromLast20"]
+            self.platformRewards = env_confid["platformRewards"]
 
         # Set NP to print decimal numbers rather than scientific notation.
         np.set_printoptions(suppress=True)
+
+        self.ranOnce = False
 
     def reset(self):
         """
         Clear all per-episode variables and reset world for next episode
         Returns
-            observation: <np.array> [X, Y, Z, xVelo, yVelo, zVelo, BlockSightDistance]
+            observation: <np.array> [xPos, yPos, zPos, xVelocity, yVelocity, zVelocity,
+                                                            blockInSightDistance, blockInSightX, blockInSightY,
+                                                            blockInSightZ]
         """
         # resets malmo world to xml file
         world_state = self.init_malmo()
@@ -88,26 +110,25 @@ class elytraFlyer(gym.Env):
         currentStep = self.steps[-1] if len(self.steps) > 0 else 0
         self.steps.append(currentStep + self.episode_step)
 
+        self.platformRewards.append(self.saved_plat_reward)
+
         # Get the value of the current episode and append to the episodes list
         if len(self.episodes) > 0:
             currentEpisode = self.episodes[-1] + 1
         else:
             currentEpisode = 0
         self.episodes.append(currentEpisode)
-
-        #append reward ratios
-        self.recordedRatios.append(self.reward_ratio)
-        #print(self.recordedRatios)
-
-        # Reset values of the run
-        self.episode_return = 0
-        self.episode_step = 0
-        self.clearObservationVariables()
+        self.damageTakenPercentLast20Episodes.append(sum(self.damageFromLast20) / 20)
 
         # Log (Right now I have it logging after every flight
         # if len(self.returns) > self.log_frequency + 1 and \
         #         len(self.returns) % self.log_frequency == 0:
         self.log_returns()
+
+        # Reset values of the run
+        self.episode_return = 0
+        self.episode_step = 0
+        self.clearObservationVariables()
 
         # Get Observations
         self.obs = self.get_observation(world_state)
@@ -120,7 +141,9 @@ class elytraFlyer(gym.Env):
         Args
             action: <box> 2x1 box defining action - X and Y for where to move mouse.
         Returns
-            observation: <np.array> [X, Y, Z, xVelo, yVelo, zVelo, BlockSightDistance] location
+            observation: <np.array> [xPos, yPos, zPos, xVelocity, yVelocity, zVelocity,
+                                                            blockInSightDistance, blockInSightX, blockInSightY,
+                                                            blockInSightZ]
             reward: <float> reward from taking action
             done: <bool> indicates terminal state
             info: <dict> dictionary of extra information
@@ -140,69 +163,77 @@ class elytraFlyer(gym.Env):
             print("Error:", error.text)
         self.obs = self.get_observation(world_state)
 
-
         # Check if mission ended
         done = not world_state.is_mission_running
 
         # Get Reward
         reward = 0
-        # Get's rewards defined in XML (We have none right now)
+        # Get's rewards defined in XML
         for r in world_state.rewards:
-            reward += r.getValue()
+            if r.getValue() != 0:
+                # print(f"step() - Punish for touching diamond_block = {r.getValue()}")
+                reward += r.getValue()
+
+        # get additional rewards
+        if self.platx <= self.obs[0] <= self.platx+25:
+            if self.platz <= self.obs[2] <= self.platz + 20:
+                if self.obs[1] <= 3:
+                    print("LANDED!!!")
+                    reward += self.platform_reward_gamma * 1000
+                    if reward != 0.0:
+                        self.saved_plat_reward = reward
+        else:
+            if self.obs[0] < 0 or self.obs[2] < 0:
+                reward += self.platform_reward_gamma
+                print("neg")
+            elif self.obs[0] > (self.platx+25):
+                reward += (self.platx + (self.platx - (self.obs[0] - self.platx))) * self.platform_reward_gamma
+                print("x")
+            elif self.obs[2] > (self.platz+25):
+                reward += (self.platz + (self.platz - (self.obs[2] - self.platz))) * self.platform_reward_gamma
+                print("z")
+            else:
+                reward += ((self.platx - (self.platx - self.obs[0])) + (self.platz - (self.platz - self.obs[2]))) * self.platform_reward_gamma
+            if reward != 0.0:
+                self.saved_plat_reward = reward
+                print("AI reward: ", self.saved_plat_reward)
+
 
         # Reward for going far in the Z direction
-        reward += self.obs[2] * self.distance_reward_gamma
-        reward += self.obs[5] * self.velocity_reward_gamma
-
-        # Glide slope ratio? AI flew z blocks for every y drop in altitude
-        # distance / change in altitude (61)
-        # AI flies about 2 blocks forward on average for every 1 block drop.
-
-        glide_ratio = self.obs[2] / self.obs[1]
-        #print("glide ratio is ", glide_ratio)
-        self.optimal_ratio = 2.5
-
-        # constraint on recorded ratio to not be NaN or too high (when it dies or dips straight down)
-        if not math.isnan(glide_ratio) and glide_ratio <= (self.optimal_ratio*1.5):
-            self.reward_ratio = glide_ratio
-
-        # if AI glide_ratio between 15%+/- of glide_max, reward. if less or greater than 15% of optimal_ratio, penalize
-        if self.obs[1] <= 5:
-            #print("the recorded glide ratio is ", self.reward_ratio)
-            forgiveness_range_below = self.optimal_ratio - self.optimal_ratio*0.15
-            forgiveness_range_above = self.optimal_ratio*0.15
-
-            if self.reward_ratio <= forgiveness_range_above or self.reward_ratio >= forgiveness_range_below:
-                reward += self.reward_ratio * self.glide_reward_gamma
-                #print("positive reward ", reward)
-            else:
-                reward -= self.reward_ratio * self.glide_reward_gamma
-                #print("negative reward ", reward)
-
-            # if glide_ratio > glide_max:
-            #     print("old glide max: ", glide_max)
-            #     glide_max = glide_ratio
-            #     # update global glide_max
-            #     print("new glide max: ", glide_max)
-
-
+        #reward += self.obs[2] * self.distance_reward_gamma
 
         # Punish for hitting a pillar in midflight
+        """
         if self.obs[1] > 3:
-            reward -= self.damage_taken * self.damage_taken_reward_gamma
+            punishment = self.damage_taken * self.damage_taken_reward_gamma
+            if punishment != 0:
+                reward -= punishment
+                # print(f"step() - Punishment for taking damage = -{punishment}")
+        """
 
         # add reward for this step to the episode return value.
         self.episode_return += reward
-
+        # print(f"step() - Episode Return so far = {self.episode_return}")
         return self.obs, reward, done, dict()
 
     def getPillarLocations(self, width=300, length=1000):
         return_string = ""
-        for x in range(-1 * int(width/2), int(width/2)):
-            for z in range(length):
-                if randint(1/self.pillar_frequency) == 1:
+        for x in range(-1 * int(width / 2), int(width / 2)):
+            for z in range(30, length):
+                if randint(1 / self.pillar_frequency) == 1:
                     if x >= 15 or x <= -15:
-                        return_string += f"<DrawLine x1='{x}' y1='2' z1='{z}' x2 = '{x}' y2 = '100' z2 = '{z}' type='diamond_block'/>\n"
+                        if self.platx > x > self.platx + 25:
+                            return_string += f"<DrawLine x1='{x}' y1='2' z1='{z}' x2 = '{x}' y2 = '100' z2 = '{z}' type='diamond_block'/>\n"
+        return return_string
+
+    def getPlatformLocation(self, width=200, length=1000):
+        return_string = ""
+        randPos = np.random.default_rng(200)
+        x = randPos.integers(low=75, high=200)
+        self.platx = x
+        self.platz = x
+        print("platform location: ", self.platx, " ", self.platy, " ", self.platz)
+        return_string += f"<DrawCuboid x1='{self.platx}' y1='{self.platy}' z1='{self.platz}' x2 = '{self.platx + 25}' y2 = '{self.platy}' z2 = '{self.platz + 25}' type='emerald_block'/>\n"
         return return_string
 
 
@@ -223,13 +254,14 @@ class elytraFlyer(gym.Env):
                     <ServerHandlers>
                         <FlatWorldGenerator generatorString="2;7,11;1;"/>
                         <DrawingDecorator>
-                            <DrawBlock x="0" y="60" z="0" type="lapis_block"/>
-                            <DrawCuboid x1="-150" y1="2" z1="1" x2="150" y2="100" z2="1000" type="air"/>
+                            <DrawCuboid x1="-150" y1="2" z1="0" x2="150" y2="100" z2="1000" type="air"/>
                             ''' + \
-                                self.getPillarLocations() + '''
+               self.getPlatformLocation() + '''
                             <DrawCuboid x1="-20" y1="2" z1="1" x2="-10" y2="100" z2="30" type="air"/>
+                            <DrawBlock x="0" y="60" z="0" type="lapis_block"/>
                         </DrawingDecorator>
                         <ServerQuitWhenAnyAgentFinishes/>
+                        <ServerQuitFromTimeUp timeLimitMs="45000"/>
                     </ServerHandlers>
                 </ServerSection>
                 <AgentSection mode="Survival">
@@ -244,6 +276,13 @@ class elytraFlyer(gym.Env):
                         <HumanLevelCommands/>
                         <ObservationFromFullStats/>
                         <ObservationFromRay/>
+                        <AgentQuitFromTouchingBlockType>
+                            <Block type="emerald_block"/>
+                        </AgentQuitFromTouchingBlockType>
+                        <RewardForTouchingBlockType>
+                            ''' + \
+               f'<Block reward="{self.pillar_touch_punishment}" type="diamond_block"/>' + ''' 
+                        </RewardForTouchingBlockType>  
                     </AgentHandlers>
                 </AgentSection>
                 </Mission>
@@ -253,6 +292,91 @@ class elytraFlyer(gym.Env):
         """
         Log the current returns as a graph and text file
         """
+        self.log_returns_as_text()
+        self.log_returns_as_graph()
+
+    def log_returns_as_text(self):
+        # log damage taken % in last 20 episodes
+        try:
+            with open('outputs/DamagePercent.txt', 'w') as f:
+                for step, value in zip(self.episodes[1:], self.damageTakenPercentLast20Episodes[1:]):
+                    f.write("{}\t{}\n".format(step, value))
+        except Exception as e:
+            print("unable to log damage taken Percent results in text")
+            print(e)
+
+        # log flight distances
+        try:
+            with open('outputs/DistanceFlown.txt', 'w') as f:
+                for step, value in zip(self.episodes[1:], self.flightDistances[1:]):
+                    f.write("{}\t{}\n".format(step, value))
+        except Exception as e:
+            print("unable to log flight distances in text")
+            print(e)
+
+        # log rewards per step
+        try:
+            with open('outputs/returns.txt', 'w') as f:
+                for step, value in zip(self.steps[1:], self.returns[1:]):
+                    f.write("{}\t{}\n".format(step, value))
+        except Exception as e:
+            print("unable to log rewards as text")
+            print(e)
+
+        try:
+            with open('outputs/platformRewards.txt', 'w') as f:
+                for step, value in zip(self.episodes[1:], self.platformRewards[1:]):
+                    f.write("{}\t{}\n".format(step, value))
+        except Exception as e:
+            print("unable to log damage taken Percent results in text")
+            print(e)
+
+    def log_returns_as_graph(self):
+        # log damage taken % from last 20 flights
+        try:
+            # box = np.ones(self.log_frequency)/ self.log_frequency
+            # returns_smooth = np.convolve(self.episodes[1:], box, mode='same')
+            plt.clf()
+            plt.plot(self.episodes[1:], self.damageTakenPercentLast20Episodes[1:])
+            plt.title('Percent of episodes with damage taken in last 20 episodes')
+            plt.ylabel('Damage Percent')
+            plt.xlabel('Episodes')
+            plt.savefig('outputs/DamagePercent.png')
+            # Write to TXT file
+        except Exception as e:
+            print("unable to log damage taken Percent results")
+            print(e)
+
+        # Log the flight distances
+        try:
+            # Create graph
+            plt.clf()
+            plt.plot(self.episodes[1:], self.flightDistances[1:])
+            plt.title('Elytrai Distance Flown in Z direction')
+            plt.ylabel('Distance')
+            plt.xlabel('Episodes')
+            plt.savefig('outputs/DistanceFlown.png')
+
+            # Write to TXT file
+        except Exception as e:
+            print("unable to log flight distance results")
+            print(e)
+
+        try:
+            # Create graph
+            box = np.ones(self.log_frequency) / self.log_frequency
+            returns_smooth = np.convolve(self.platformRewards[1:], box, mode='same')
+            plt.clf()
+            plt.plot(self.episodes[1:], returns_smooth)
+            plt.title('Platform Rewards')
+            plt.ylabel('Rewards')
+            plt.xlabel('Episodes')
+            plt.savefig('outputs/platform.png')
+
+
+        except Exception as e:
+            print("unable to log reward results")
+            print(e)
 
         # Log the reward scores.
         try:
@@ -264,52 +388,15 @@ class elytraFlyer(gym.Env):
             plt.title('Elytrai Flight Rewards')
             plt.ylabel('Return')
             plt.xlabel('Steps')
-            plt.savefig('returns.png')
+            plt.savefig('outputs/returns.png')
 
-            # Write to TXT file
-            with open('returns.txt', 'w') as f:
-                for step, value in zip(self.steps[1:], self.returns[1:]):
-                    f.write("{}\t{}\n".format(step, value))
-        except:
+        except Exception as e:
             print("unable to log reward results")
+            print(e)
 
-        # Log the flight distances
-        try:
-            # Create graph
-            box = np.ones(self.log_frequency) / self.log_frequency
-            returns_smooth = np.convolve(self.flightDistances[1:], box, mode='same')
-            plt.clf()
-            plt.plot(self.episodes[1:], returns_smooth)
-            plt.title('Elytrai Flight Rewards')
-            plt.ylabel('Distance')
-            plt.xlabel('Episodes')
-            plt.savefig('DistanceFlown.png')
-
-            # Write to TXT file
-            with open('DistanceFlown.txt', 'w') as f:
-                for step, value in zip(self.episodes[1:], self.flightDistances[1:]):
-                    f.write("{}\t{}\n".format(step, value))
-        except:
-            print("unable to log flight distance results")
-
-        try:
-            # Create graph
-            box = np.ones(self.log_frequency) / self.log_frequency
-            returns_smooth = np.convolve(self.recordedRatios[1:], box, mode='same')
-            plt.clf()
-            plt.plot(self.episodes[1:], returns_smooth)
-            plt.title('Elytrai Flight Rewards')
-            plt.ylabel('Recorded Glide Ratio')
-            plt.xlabel('Episodes')
-            plt.savefig('glideRatios.png')
-
-            # Write to TXT file
-            with open('glideRatios.txt', 'w') as f:
-                for step, value in zip(self.episodes[1:], self.recordedRatios[1:]):
-                    f.write("{}\t{}\n".format(step, value))
-        except:
-            print("unable to log glide ratio results")
-
+    def close(self):
+        print("Where would you like to save files")
+        print(input())
 
     def init_malmo(self):
         """
@@ -351,7 +438,9 @@ class elytraFlyer(gym.Env):
         Args
             world_state: <object> current agent world state
         Returns
-            observation: <np.array> the state observation [X, Y, Z, xVelo, yVelo, zVelo]
+            observation: <np.array> the state observation [xPos, yPos, zPos, xVelocity, yVelocity, zVelocity,
+                                                            blockInSightDistance, blockInSightX, blockInSightY,
+                                                            blockInSightZ]
         """
         obs = np.zeros((self.num_observations,))  # Initialize zero'd obs return
 
@@ -362,19 +451,36 @@ class elytraFlyer(gym.Env):
                 msg = world_state.observations[-1].text
                 jsonLoad = json.loads(msg)
 
-                self.damage_taken = 20 - jsonLoad['Life']
-
                 # Get the distance of the block at the center of screen. -1 if no block there
                 try:
-                    blockInSightDistance = jsonLoad['LineOfSight']['distance']
+                    blockType = jsonLoad['LineOfSight']['type']
+                    if blockType == "diamond_block":
+                        blockInSightX = jsonLoad['LineOfSight']['x']
+                        blockInSightY = jsonLoad['LineOfSight']['x']
+                        blockInSightZ = jsonLoad['LineOfSight']['x']
+                        blockInSightDistance = jsonLoad['LineOfSight']['distance']
+                    else:
+                        blockInSightDistance = 10000
+                        blockInSightX = 10000
+                        blockInSightY = 10000
+                        blockInSightZ = 10000
+
                 except:
-                    blockInSightDistance = -1
+                    blockInSightDistance = 10000
+                    blockInSightX = 10000
+                    blockInSightY = 10000
+                    blockInSightZ = 10000
 
                 # Get the X, Y, and Z positions of the agent
                 xPos = jsonLoad['XPos']
                 yPos = jsonLoad['YPos']
                 zPos = jsonLoad['ZPos']
 
+                # determine if damage was taken from hitting a pillar
+                if yPos > 3:
+                    self.damage_taken = 20 - jsonLoad['Life']
+                    if self.damage_taken > 0:
+                        self.damageFromLast20[0] = 1
 
                 # calculate velocities
                 xVelocity = xPos - self.lastx
@@ -387,7 +493,8 @@ class elytraFlyer(gym.Env):
                 self.lastz = zPos
 
                 # Create obs np array and return
-                obsList = [xPos, yPos, zPos, xVelocity, yVelocity, zVelocity, blockInSightDistance]
+                obsList = [xPos, yPos, zPos, xVelocity, yVelocity, zVelocity, blockInSightDistance, blockInSightX,
+                           blockInSightY, blockInSightZ]
                 obs = np.array(obsList)
                 break
 
@@ -405,6 +512,10 @@ class elytraFlyer(gym.Env):
         self.zvelocity = 0
         self.damage_taken = 0
 
+        if len(self.damageFromLast20) >= 20:
+            self.damageFromLast20 = self.damageFromLast20[:-1]
+            self.damageFromLast20.insert(0, 0)
+
     def agentJumpOffStartingBlock(self):
         """
         Tells the agent to jump off the starting platform and open the elytra
@@ -421,15 +532,65 @@ class elytraFlyer(gym.Env):
         self.agent_host.sendCommand("jump 0")
         time.sleep(.1)
 
+    def saveDataAsJson(self, location, fileName="envVariables.json"):
+        envDict = {}
+        envDict["episode_step"] = self.episode_step
+        envDict["episode_return"] = self.episode_return
+        envDict["returns"] = self.returns
+        envDict["steps"] = self.steps
+        envDict["episodes"] = self.episodes
+        envDict["flightDistances"] = self.flightDistances
+        envDict["damageTakenPercentLast20Episodes"] = self.damageTakenPercentLast20Episodes
+        envDict["damageFromLast20"] = self.damageFromLast20
+        try:
+            with open(location + "\\" + fileName, 'w+') as f:
+                json.dump(envDict, f)
+        except Exception as e:
+            print("unable to save env as json")
+            print(e)
+            print(e.__traceback__)
+
 
 if __name__ == '__main__':
+    loadPath = ''
+    if len(sys.argv) > 1:
+        if sys.argv[1] == '-l':
+            print("loading file from path", sys.argv[2])
+            loadPath = sys.argv[2]
+            sys.argv = [sys.argv[0]]
+
     ray.init()
-    trainer = ppo.PPOTrainer(env=elytraFlyer, config={
-        'env_config': {},           # No environment parameters to configure
-        'framework': 'torch',       # Use pyotrch instead of tensorflow
-        'num_gpus': 0,              # We aren't using GPUs
-        'num_workers': 0            # We aren't using parallelism
-    })
+    stepsPerCheckpoint = 2500  # change this to have more or less frequent saves
+    config = ppo.DEFAULT_CONFIG.copy()
+    config['framework'] = 'torch'
+    config['num_gpus'] = 0
+    config['num_workers'] = 0
+    config['train_batch_size'] = stepsPerCheckpoint
+    config['rollout_fragment_length'] = stepsPerCheckpoint
+    config['sgd_minibatch_size'] = stepsPerCheckpoint
+    config['batch_mode'] = 'complete_episodes'
+
+    if loadPath != '':
+        jsonFilePath = loadPath.split("\\")[:-1]
+        jsonFilePath.append("envVariables.json")
+        jsonFilePath = "\\".join(jsonFilePath)
+        try:
+            with open(jsonFilePath, 'r') as f:
+                config['env_config'] = json.load(f)
+        except Exception as e:
+            print("could not read json file, creating new environment")
+            config['env_config'] = {}
+    else:
+        config['env_config'] = {}
+    trainer = ppo.PPOTrainer(env=elytraFlyer, config=config)
+    if loadPath != '':
+        trainer.restore(r"" + loadPath)
 
     while True:
-        print(trainer.train())
+        a = trainer.train()
+        saveLocation = trainer.save()
+        print("Checkpoint saved, Save Location is:", saveLocation)
+        jsonFileName = "envVariables.json"
+        folderLocation = saveLocation.split('\\')[:-1]
+        folderLocation = "\\".join(folderLocation)
+        trainer.workers.local_worker().env.saveDataAsJson(folderLocation)
