@@ -33,10 +33,11 @@ class elytraFlyer(gym.Env):
         self.velocity_reward_gamma = 0.1
         self.damage_taken_reward_gamma = 10
         self.max_pillar_frequency = 0.005
-        self.pillar_frequency = 0.0001
-        self.pillar_touch_punishment = 0
+        self.start_pillar_frequency = 0.0035
+        self.pillar_freq_inc_delta = 50
 
-        self.testNumber = 11
+
+        self.testNumber = 12
 
         self.vision_width = 15
         self.vision_distance = 60
@@ -72,6 +73,7 @@ class elytraFlyer(gym.Env):
         self.zvelocity = 0
         self.damage_taken = 0
         self.current_multiplier = 1
+        self.current_pillar_frequency = self.start_pillar_frequency
 
         self.episode_step = 0
         self.episode_return = 0
@@ -119,10 +121,10 @@ class elytraFlyer(gym.Env):
 
         # Set the value of the pillar_frequency slowly increasing the number of pillars over the course of the test
         # Maximum pillar frequency is self.max_pillar_frequency
-        if currentEpisode // 100 == 0:
-            self.pillar_frequency = 0.001
+        if currentEpisode // self.pillar_freq_inc_delta == 0:
+            self.current_pillar_frequency = self.start_pillar_frequency
         else:
-            self.pillar_frequency = min(0.0001 * (currentEpisode // 100), self.max_pillar_frequency)
+            self.current_pillar_frequency = min(0.0001 * (currentEpisode // self.pillar_freq_inc_delta), self.max_pillar_frequency)
 
         # Reset the damage multiplier and current multiplier
         self.damage_taken_mult = 1
@@ -183,7 +185,7 @@ class elytraFlyer(gym.Env):
         for r in world_state.rewards:
             if r.getValue() != 0:
                 # print(f"step() - Punish for touching diamond_block = {r.getValue()}")
-                reward += r.getValue()
+                reward += r.getValeu()
 
         # Reward for going far in the Z direction
         reward += self.lastz * self.distance_reward_gamma
@@ -204,7 +206,7 @@ class elytraFlyer(gym.Env):
         return_string = ""
         for x in range(-1 * int(width/2), int(width/2)):
             for z in range(30, length):
-                if randint(1/self.pillar_frequency) == 1:
+                if randint(1/self.current_pillar_frequency) == 1:
                     return_string += f"<DrawLine x1='{x}' y1='2' z1='{z}' x2 = '{x}' y2 = '100' z2 = '{z}' type='diamond_block'/>\n"
         return return_string
 
@@ -606,15 +608,68 @@ class elytraFlyer(gym.Env):
         self.agent_host.sendCommand("jump 0")
         time.sleep(.1)
 
+    def saveDataAsJson(self,location,fileName = "envVariables.json"):
+        envDict = {}
+        envDict["episode_step"] = self.episode_step
+        envDict["episode_return"] = self.episode_return
+        envDict["returns"] = self.returns
+        envDict["steps"] = self.steps
+        envDict["episodes"] = self.episodes
+        envDict["flightDistances"] = self.flightDistances
+        envDict["damageTakenPercentLast20Episodes"] = self.damageTakenPercentLast20Episodes
+        envDict["damageFromLast20"] = self.damageFromLast20
+        try:
+            with open(location + "\\" + fileName, 'w+') as f:
+                json.dump(envDict,f)
+        except Exception as e:
+            print("unable to save env as json")
+            print(e)
+            print(e.__traceback__)
+
 
 if __name__ == '__main__':
+    loadPath = ''
+    if len(sys.argv) > 1:
+        if sys.argv[1] == '-l':
+            print("loading file from path", sys.argv[2])
+            loadPath = sys.argv[2]
+            sys.argv = [sys.argv[0]]
+
     ray.init()
-    trainer = ppo.PPOTrainer(env=elytraFlyer, config={
-        'env_config': {},           # No environment parameters to configure
-        'framework': 'torch',       # Use pyotrch instead of tensorflow
-        'num_gpus': 0,              # We aren't using GPUs
-        'num_workers': 0            # We aren't using parallelism
-    })
+    stepsPerCheckpoint = 2500  # change this to have more or less frequent saves
+    config = {}
+    config['framework'] = 'torch'
+    config['num_gpus'] = 0
+    config['num_workers'] = 0
+    config['train_batch_size'] = stepsPerCheckpoint
+    config['rollout_fragment_length'] = stepsPerCheckpoint
+    config['sgd_minibatch_size'] = stepsPerCheckpoint
+    config['batch_mode'] = 'complete_episodes'
+
+    if loadPath != '':
+        jsonFilePath = loadPath.split("\\")[:-1]
+        jsonFilePath.append("envVariables.json")
+        jsonFilePath = "\\".join(jsonFilePath)
+        try:
+            with open(jsonFilePath, 'r') as f:
+                config['env_config'] = json.load(f)
+        except Exception as e:
+            print("could not read json file, creating new environment")
+            config['env_config'] = {}
+    else:
+        config['env_config'] = {}
+    trainer = ppo.PPOTrainer(env=elytraFlyer, config=config)
+    if loadPath != '':
+        trainer.restore(r"" + loadPath)
 
     while True:
-        print(trainer.train())
+        a = trainer.train()
+        saveLocation = trainer.save()
+        print("Checkpoint saved, Save Location is:", saveLocation)
+        jsonFileName = "envVariables.json"
+        folderLocation = saveLocation.split('\\')[:-1]
+        folderLocation = "\\".join(folderLocation)
+        trainer.workers.local_worker().env.saveDataAsJson(folderLocation)
+
+
+
