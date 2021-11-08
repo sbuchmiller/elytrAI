@@ -710,7 +710,7 @@ if __name__ == '__main__':
             sys.argv = [sys.argv[0]]
 
     ray.init()
-    stepsPerCheckpoint = 2500  # change this to have more or less frequent saves
+    stepsPerCheckpoint = 5000  # change this to have more or less frequent saves
     config = {}
     config['framework'] = 'torch'
     config['num_gpus'] = 0
