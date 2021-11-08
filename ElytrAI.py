@@ -18,15 +18,15 @@ from numpy.random import randint
 import gym
 import ray
 from gym.spaces import Discrete, Box
-#from ray.rllib.agents import ppo
+from ray.rllib.agents import ppo
 #from ray.rllib.agents import sac
-from ray.rllib.agents.a3c import a2c
+#from ray.rllib.agents.a3c import a2c
 
 
 class elytraFlyer(gym.Env):
 
     def __init__(self, env_config, log_frequency = 1, move_mult = 50, ):
-        self.num_observations = 11
+        self.num_observations = 13
         self.log_frequency = 1
         self.move_mult = 50
         self.distance_reward_gamma = 0.02
@@ -253,7 +253,7 @@ class elytraFlyer(gym.Env):
         Log the current returns as a graph and text file
         """
         self.log_returns_as_text()
-        self.log_returns_as_graph()
+        #self.log_returns_as_graph()
         
 
     def log_returns_as_text(self):
@@ -390,7 +390,6 @@ class elytraFlyer(gym.Env):
                 # Get observation json
                 msg = world_state.observations[-1].text
                 jsonLoad = json.loads(msg)
-                
 
                 # Get the distance of the block at the center of screen. -1 if no block there
                 try:
@@ -417,6 +416,10 @@ class elytraFlyer(gym.Env):
                 yPos = jsonLoad['YPos']
                 zPos = jsonLoad['ZPos']
 
+                #get the pitch and yaw that the agent is facing
+                pitch = jsonLoad['Pitch']
+                yaw = jsonLoad['Yaw']
+
                 # determine if damage was taken from hitting a pillar
                 damageTaken = 0
                 if yPos > 3:
@@ -435,7 +438,7 @@ class elytraFlyer(gym.Env):
                 self.lastz = zPos
 
                 # Create obs np array and return
-                obsList = [xPos, yPos, zPos, xVelocity, yVelocity, zVelocity, blockInSightDistance, blockInSightX, blockInSightY, blockInSightZ, damageTaken]
+                obsList = [xPos, yPos, zPos, xVelocity, yVelocity, zVelocity, blockInSightDistance, blockInSightX, blockInSightY, blockInSightZ, damageTaken, pitch, yaw]
                 obs = np.array(obsList)
                 break
 
@@ -509,7 +512,7 @@ if __name__ == '__main__':
     config['num_workers'] = 0
     config['train_batch_size'] = stepsPerCheckpoint 
     config['rollout_fragment_length'] = stepsPerCheckpoint
-    #config['sgd_minibatch_size'] = stepsPerCheckpoint
+    config['sgd_minibatch_size'] = stepsPerCheckpoint
     config['batch_mode'] = 'complete_episodes'
 
     if loadPath != '':
@@ -524,7 +527,7 @@ if __name__ == '__main__':
             config['env_config'] = {}
     else:
         config['env_config'] = {}
-    trainer = a2c.A2CTrainer(env=elytraFlyer, config=config)
+    trainer = ppo.PPOTrainer(env=elytraFlyer, config=config)
     if loadPath != '':
         trainer.restore(r""+loadPath)
     
