@@ -7,7 +7,7 @@ Source code: https://github.com/sbuchmiller/elytrAI
 
 Reports:
 
-- [Proposal](proposal.html)
+- [Proposal](proposal.md)
 - [Status](status.html)
 - [Final](final.html)
 
