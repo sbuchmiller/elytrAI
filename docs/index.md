@@ -15,7 +15,7 @@ ElytrAI is a project created for the project course CS-175 that aims to create a
 
 ## What is ElytrAI?
 
-ElytrAI is our AI project where our agent learns how to fly and navigate using Minecraft’s “elytra” item. The elytra is a rare wing item that is the only single-item source of flight in Minecraft’s survival mode. 
+ElytrAI aims to create an AI where our agent learns how to fly and navigate using Minecraft’s elytra item. The elytra is a rare wing item that is the only single-item source of flight in Minecraft’s survival mode. 
   
   ![image](https://user-images.githubusercontent.com/36436765/141851791-b1c8500f-f78c-43d1-b820-0a9e61999820.png)
  
