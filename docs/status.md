@@ -7,6 +7,12 @@ title: Status
 
 ## Approach
 
+### Distances
+
+### Obstacles
+
+### Platform
+
 ## Evaluation
 
 ## Remaining Goals and Challenges
