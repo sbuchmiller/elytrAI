@@ -29,7 +29,7 @@ For reward models we have differing rewards based on the task the agent must acc
 
 We also experimented with a more advanced penalty system, where the agent would be penalized for moving closer to a pillar. To do this we used the malmo ObservationFromGrid and created a second grid which had rewards scaled down for grid cells that were close to obstacles. We did not find a ton of success with this method.
 
-![pillarRewardVisualizer](https://user-images.githubusercontent.com/44657382/142092864-737b6de5-3a2c-48e0-ba23-cdeac06a2bef.png)
+<img src="https://user-images.githubusercontent.com/44657382/142092864-737b6de5-3a2c-48e0-ba23-cdeac06a2bef.png" width="400">
 
 ------
 
