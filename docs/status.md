@@ -73,6 +73,8 @@ As can be seen from these graphs, our agent still increased the distance travell
 
 A similar problem can be seen from looking at the pillars touched graph
 
+![obstaclesPillarsTouched]()
+
 We can see that the agent is not decreasing the percentage of runs with pillars touched, but almost seems to increase it over time. This shows that we must modify our reward system, or allow our agent more fine-tuned control over the camera to allow avoidance of our obstacles.
 
 Our best platform run can be seen below where the agent gets closer to the platform, and a small positive linear relationship is seen. The variance in the agent’s score, and therefore the range of X, Y and Z positions it flies to, reduces greatly which signals that the AI is learning which areas the platform is not in. However, the agent still struggles to find and land on the platform and does not improve fast enough. This shows we will need to modify our vision model to give the agent more information.
