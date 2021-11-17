@@ -29,7 +29,7 @@ For reward models we have differing rewards based on the task the agent must acc
 
 We also experimented with a more advanced penalty system, where the agent would be penalized for moving closer to a pillar. To do this we used the malmo ObservationFromGrid and created a second grid which had rewards scaled down for grid cells that were close to obstacles. We did not find a ton of success with this method.
 
-![pillarRewardVisualizer]()
+![pillarRewardVisualizer](https://user-images.githubusercontent.com/44657382/142092864-737b6de5-3a2c-48e0-ba23-cdeac06a2bef.png)
 
 ------
 
@@ -53,29 +53,38 @@ Finally we also kept track of the rewards per step for our agent, similar to how
 
 if the rewards are increasing over time, but the other quantitative measures are not, it means that our rewards values are not good for the task we are attempting to solve, since the agent is maximizing rewards without completing the task.
 
+<br>
+
 Notable Runs: our best distance only run.
 
-![distanceOnlyRunDistances]()
+![distanceOnly](https://user-images.githubusercontent.com/44657382/142092865-fc24f018-c185-4c7e-8c5d-de5afbb0011f.png)
 
-![distanceOnlyRunRewards]()
+![distanceReturns](https://user-images.githubusercontent.com/44657382/142092867-d6d220bc-54e3-49b4-b168-37f0126d051a.png)
 
 
 As can be seen from the graphs, we have a strong linear relationship between episodes and distance travelled meaning that the agent is accomplishing the task of travelling an increased distance with each run. The same trend is seen from the return vs step chart, which means that the agent is gaining increased rewards as it completes more episodes.
 
+<br>
 
-our best obstacle avoidance run
+our best obstacle avoidance run:
 
-![obstacleDistance]()
+![obstacleDistance](https://user-images.githubusercontent.com/44657382/142092870-c8b9b238-8af7-4eb8-9fba-77482534b441.png)
 
-![obstacleRewards]()
+![obstacleReturns](https://user-images.githubusercontent.com/44657382/142092872-0b40ae50-9e64-4626-bd30-1c3df09a3bfe.png)
 
 As can be seen from these graphs, our agent still increased the distance travelled with each successive flight, the return graph however shows a much weaker correlation(ignoring the dip in the middle caused by an error with malmo). This shows that the reward system is still functional, but could likely be improved to allow the agent to learn faster.
 
 A similar problem can be seen from looking at the pillars touched graph
 
-![obstaclesPillarsTouched]()
+![obstaclePillars](https://user-images.githubusercontent.com/44657382/142092871-a4cc648d-7446-4355-adb1-89de39f91dbb.png)
 
 We can see that the agent is not decreasing the percentage of runs with pillars touched, but almost seems to increase it over time. This shows that we must modify our reward system, or allow our agent more fine-tuned control over the camera to allow avoidance of our obstacles.
+
+<br>
+
+Platform Run:
+
+![platformReturns](https://user-images.githubusercontent.com/44657382/142092862-5a5b2433-7fc2-455c-b2b6-167c87ef4bb2.png)
 
 Our best platform run can be seen below where the agent gets closer to the platform, and a small positive linear relationship is seen. The variance in the agent’s score, and therefore the range of X, Y and Z positions it flies to, reduces greatly which signals that the AI is learning which areas the platform is not in. However, the agent still struggles to find and land on the platform and does not improve fast enough. This shows we will need to modify our vision model to give the agent more information.
 
