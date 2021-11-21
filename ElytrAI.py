@@ -613,9 +613,13 @@ def save_checkpoint(trainer):
     '''
     saveLocation = trainer.save()
     print("Checkpoint saved, Save Location is:", saveLocation)
-    folderLocation = saveLocation.split('\\')[:-1]
-    folderLocation = "\\".join(folderLocation)
-    trainer.workers.local_worker().env.saveDataAsJson(folderLocation)
+    try:
+        folderLocation = saveLocation.split('\\')[:-1]
+        folderLocation = "\\".join(folderLocation)
+        trainer.workers.local_worker().env.saveDataAsJson(folderLocation)
+    except Exception as e:
+        print("Unable to save local environment variables to json")
+        print(e)
 
 if __name__ == '__main__':
     loadPath = check_for_loading_model() #must be called first to reset argv for Rllib
