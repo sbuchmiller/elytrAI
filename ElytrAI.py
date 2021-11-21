@@ -19,16 +19,17 @@ from torch import nn
 import torch.nn.functional as F
 from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
 from ray.rllib.agents import ppo
-from PIL import Image
+from PIL import Image, ImageOps
 from ray.rllib.models import ModelCatalog
 from ray.rllib.utils.framework import try_import_tf
 import math
 tf1, tf, tfv = try_import_tf()
 
 # Global constants
-image_height = 200
-image_width = 200
+image_height = 240
+image_width = 320
 input_layers = 3
+input_number = 10
 
 
 # Gym Class
@@ -59,7 +60,9 @@ class elytraFlyer(gym.Env):
         # RLlib Params
         self.action_dict = {0: "Go Left", 1: "Go Right"}
         self.action_space = Discrete(len(self.action_dict))
-        self.observation_space = Box(0, 255, shape=(input_layers, self.video_width, self.video_height), dtype=np.float32)
+        self.observation_space = Box(low = np.array([-360, -360, -100, -100, -100, 0,0,0,0,0]),\
+            high = np.array([360,360,100,100,100,255,255,255,255,255]),\
+            shape=(input_number,), dtype=np.float32)
 
         # Malmo Params
         self.agent_host = MalmoPython.AgentHost()
@@ -252,12 +255,39 @@ class elytraFlyer(gym.Env):
 
     # Process the frame from the observation.
     @staticmethod
-    def process_frame(frame):
-        image = np.array(frame)
-        image = image.reshape((input_layers, image_height, image_width))
-        # self.draw_image(image)  # Uncomment to draw a preview of the image sent into CNN
-        image = image.astype(np.float32)
-        return image
+    def process_frame(frame, numColumns = 5, columnWidth = 30):
+        try:
+            view = ImageOps.grayscale(Image.frombytes("RGB", (image_width, image_height), np.array(frame)))
+            imageColumns = []
+            columnStart = (image_width - (numColumns*columnWidth)) / 2
+            for i in range(numColumns):
+                temp = np.array(view.crop(((columnStart + (i*columnWidth)), 0, (columnStart + ((i+1)*columnWidth)), image_height)))
+                accu = 0
+                for w in range(0,columnWidth):
+                    for h in range(0,image_height):
+                        accu += temp[h][w]
+                imageColumns.append(accu / (columnWidth * image_height))
+        except ValueError:
+            print("image failed")
+            return [0,0,0,0,0]
+        return imageColumns
+        
+
+    def process_agent_obs(self, world_state):
+        '''
+        processes the relevant agent observations from world state and returns as an np array
+        '''
+        msg = world_state.observations[-1].text
+        jsonLoad = json.loads(msg)
+        #get the pitch and yaw that the agent is facing
+        pitch = jsonLoad['Pitch']
+        yaw = jsonLoad['Yaw']
+        #get agent velocities
+        xvelocity = jsonLoad["XPos"] - self.current_x
+        yvelocity = jsonLoad["YPos"] - self.current_y
+        zvelocity = jsonLoad["ZPos"] - self.current_z 
+
+        return [pitch, yaw, xvelocity, yvelocity, zvelocity]
 
     # Update self.current_x, self.current_y, and self.current_z with current values
     def update_agent_position(self, world_state):
@@ -286,7 +316,7 @@ class elytraFlyer(gym.Env):
         Returns
             observation: <np.array> []
         """
-        obs = np.zeros((input_layers, self.video_width, self.video_height))  # Initialize zero'd obs return
+        obs = np.zeros((input_number,))  # Initialize zero'd obs return
         
         # While the mission is running, wait for a new observation
         while world_state.is_mission_running:
@@ -295,11 +325,14 @@ class elytraFlyer(gym.Env):
             if world_state.number_of_observations_since_last_state > 0 and \
                world_state.number_of_video_frames_since_last_state > 0:
                 
+                # Get video from agent perspective, then preprocess it
+                frame_obs = self.process_frame(world_state.video_frames[0].pixels)
+
+                #get additional observations from the agent
+                agent_obs = self.process_agent_obs(world_state)
+                obs = np.array(agent_obs + frame_obs, dtype=np.float32)
                 # Update self.current_x, self.current_y, and self.current_z with current values
                 self.update_agent_position(world_state)
-                
-                # Get the view that the agent sees and break
-                obs = self.process_frame(world_state.video_frames[0].pixels)
                 break
                 
             # Still waiting for observation from agent so grab the next world_state
@@ -490,16 +523,17 @@ class TorchConvNet(TorchModelV2, nn.Module):
         nn.Module.__init__(self)
 
         # Convolutional Layers
-        self.conv1 = nn.Conv2d(input_layers, 16, kernel_size=(3, 3), padding=1)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=(3, 3), padding=1)
+        # self.conv1 = nn.Conv2d(input_layers, 16, kernel_size=(3, 3), padding=1)
+        # self.conv2 = nn.Conv2d(16, 32, kernel_size=(3, 3), padding=1)
 
         # Flat Dense Layers
-        self.fc1 = nn.Linear(32 * image_height * image_width, 120)
-        self.fc2 = nn.Linear(120, 12)
+        self.fc1 = nn.Linear(10, 30)
+        self.fc2 = nn.Linear(30, 15)
+        self.fc3 = nn.Linear(15,5)
 
         # Output Layers
-        self.value_layer = nn.Linear(12, 1)
-        self.policy_layer = nn.Linear(12, 2)
+        self.value_layer = nn.Linear(5, 1)
+        self.policy_layer = nn.Linear(5, 2)
 
         self._value_out = None
 
@@ -508,15 +542,16 @@ class TorchConvNet(TorchModelV2, nn.Module):
         c_vals = c_vals.type(torch.float)  # Convert the image from int to float
 
         # Run the image through the convoluition layers
-        c_vals = F.relu(self.conv1(c_vals))
-        c_vals = F.relu(self.conv2(c_vals))
+        # c_vals = F.tanh(self.conv1(c_vals))
+        # c_vals = F.tanh(self.conv2(c_vals))
 
         # Flatten the image while maintaining the batch size
         c_vals = c_vals.flatten(start_dim=1)
 
         # Run the image through the dense layers
-        c_vals = F.relu(self.fc1(c_vals))
-        c_vals = F.relu(self.fc2(c_vals))
+        c_vals = F.tanh(self.fc1(c_vals))
+        c_vals = F.tanh(self.fc2(c_vals))
+        c_vals = F.tanh(self.fc3(c_vals))
 
         # Generate output and Return
         self._value_out = F.softmax(self.value_layer(c_vals))
