@@ -2,3 +2,5 @@ _site/
 .sass-cache/
 .jekyll-metadata
 outputs/
+temp.py
+test.py

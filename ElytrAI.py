@@ -589,4 +589,4 @@ if __name__ == '__main__':
     trainer = ppo.PPOTrainer(env=elytraFlyer, config=get_config(loadPath))
     while True:
         print(trainer.train())
-        save_checkpoint()
+        save_checkpoint(trainer)
