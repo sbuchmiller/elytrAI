@@ -530,9 +530,20 @@ class TorchConvNet(TorchModelV2, nn.Module):
 
 # ------------------------------MAIN HELPER FUNCTIONS--------------------------------
 # Get the model configuration settings
-def get_config():
+def get_config(loadPath = ''):
     _config = dict()
-    _config['env_config'] = {}
+    if loadPath != '':
+        jsonFilePath = loadPath.split("\\")[:-1]
+        jsonFilePath.append("envVariables.json")
+        jsonFilePath = "\\".join(jsonFilePath)
+        try:
+            with open(jsonFilePath, 'r') as f:
+                _config['env_config'] = json.load(f)
+        except Exception as e:
+            print("could not read json file from loadPath, creating new environment")
+            _config['env_config'] = {}
+    else:
+        _config['env_config'] = {}
     _config['num_gpus'] = 0
     _config['num_workers'] = 0
     _config['use_critic'] = True
@@ -547,11 +558,35 @@ def register_model():
     ModelCatalog.register_custom_model("custom_model", TorchConvNet)
 
 
+def check_for_loading_model():
+    loadPath = ''
+    if len(sys.argv) > 1:
+        if sys.argv[1] == '-l':
+            print("loading file from path", sys.argv[2])
+            loadPath = sys.argv[2]
+            #reset sys.argv to not include the -l argument
+            if len(sys.argv) <= 3:
+                sys.argv = [sys.argv[0]]
+            else:
+                sys.argv = sys.argv[3:].insert(0,sys.argv[0])
+    return loadPath
+
+def save_checkpoint(trainer):
+    '''
+    saves a checkpoint of the trainer, as well as the environement variables into a json file
+    
+    '''
+    saveLocation = trainer.save()
+    print("Checkpoint saved, Save Location is:", saveLocation)
+    folderLocation = saveLocation.split('\\')[:-1]
+    folderLocation = "\\".join(folderLocation)
+    trainer.workers.local_worker().env.saveDataAsJson(folderLocation)
+
 if __name__ == '__main__':
+    loadPath = check_for_loading_model() #must be called first to reset argv for Rllib
     register_model()
     ray.init()
-    trainer = ppo.PPOTrainer(env=elytraFlyer, config=get_config())
+    trainer = ppo.PPOTrainer(env=elytraFlyer, config=get_config(loadPath))
     while True:
         print(trainer.train())
-        saveLocation = trainer.save()
-        print(saveLocation)
+        save_checkpoint()
