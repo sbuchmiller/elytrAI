@@ -616,7 +616,7 @@ def save_checkpoint(trainer):
     try:
         folderLocation = saveLocation.split('\\')[:-1]
         folderLocation = "\\".join(folderLocation)
-        trainer.workers.local_worker().env.saveDataAsJson(folderLocation)
+        trainer.workers.local_worker().env.save_data_as_json(folderLocation)
     except Exception as e:
         print("Unable to save local environment variables to json")
         print(e)
