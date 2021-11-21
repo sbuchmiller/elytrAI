@@ -553,3 +553,5 @@ if __name__ == '__main__':
     trainer = ppo.PPOTrainer(env=elytraFlyer, config=get_config())
     while True:
         print(trainer.train())
+        saveLocation = trainer.save()
+        print(saveLocation)
