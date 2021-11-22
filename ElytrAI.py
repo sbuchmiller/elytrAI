@@ -626,6 +626,8 @@ if __name__ == '__main__':
     register_model()
     ray.init()
     trainer = ppo.PPOTrainer(env=elytraFlyer, config=get_config(loadPath))
+    if loadPath != '':
+        trainer.restore(r"" + loadPath)
     while True:
         print(trainer.train())
         save_checkpoint(trainer)
