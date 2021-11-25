@@ -50,7 +50,7 @@ class elytraFlyer(gym.Env):
 
         # Reward Gammas & Multipliers
         self.distance_reward_gamma = 0.02
-        self.pillar_hit_reward_multiplier = 50
+        self.pillar_hit_reward_multiplier = 10
 
         # Pillar Constants
         self.max_pillar_frequency = 0.005
@@ -58,7 +58,7 @@ class elytraFlyer(gym.Env):
         self.pillar_freq_inc_delta = 50
 
         # RLlib Params
-        self.action_dict = {0: "Go Left", 1: "Go Right"}
+        self.action_dict = {0: "Go Left", 1: "Go Right", 2: "Go Up", 3: "Go Down"}
         self.action_space = Discrete(len(self.action_dict))
         self.observation_space = Box(low = np.array([-360, -360, -100, -100, -100, 0,0,0,0,0]),\
             high = np.array([360,360,100,100,100,255,255,255,255,255]),\
@@ -194,7 +194,7 @@ class elytraFlyer(gym.Env):
         reward = self.calculate_distance() * self.distance_reward_gamma
         for r in world_state.rewards:
             if r.getValue() == self.pillar_touch_flag:
-                reward = -reward * self.pillar_hit_reward_multiplier
+                reward = -1*(reward * self.pillar_hit_reward_multiplier)
                 self.pillars_touched_in_run += 1
 
         return reward
@@ -219,6 +219,10 @@ class elytraFlyer(gym.Env):
             self.agent_host.sendCommand(f"moveMouse -{self.move_mult} 0")
         elif action == 1:
             self.agent_host.sendCommand(f"moveMouse {self.move_mult} 0")
+        elif action == 2:
+            self.agent_host.sendCommand(f"moveMouse 0 {self.move_mult}")
+        elif action == 3:
+            self.agent_host.sendCommand(f"moveMouse 0 -{self.move_mult}")
 
         # Sleep and increment the episode by one
         time.sleep(self.step_time_delta)
@@ -270,6 +274,7 @@ class elytraFlyer(gym.Env):
         except ValueError:
             print("image failed")
             return [0,0,0,0,0]
+        print(imageColumns)
         return imageColumns
         
 
@@ -533,7 +538,7 @@ class TorchConvNet(TorchModelV2, nn.Module):
 
         # Output Layers
         self.value_layer = nn.Linear(5, 1)
-        self.policy_layer = nn.Linear(5, 2)
+        self.policy_layer = nn.Linear(5, 4)
 
         self._value_out = None
 
