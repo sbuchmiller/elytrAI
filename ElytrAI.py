@@ -29,7 +29,7 @@ tf1, tf, tfv = try_import_tf()
 image_height = 240
 image_width = 320
 input_layers = 3
-input_number = 10
+input_number = 15
 
 
 # Gym Class
@@ -60,8 +60,8 @@ class elytraFlyer(gym.Env):
         # RLlib Params
         self.action_dict = {0: "Go Left", 1: "Go Right", 2: "Go Up", 3: "Go Down"}
         self.action_space = Discrete(len(self.action_dict))
-        self.observation_space = Box(low = np.array([-360, -360, -100, -100, -100, 0,0,0,0,0]),\
-            high = np.array([360,360,100,100,100,255,255,255,255,255]),\
+        self.observation_space = Box(low = np.array([-360, -360, -100, -100, -100, 0,0,0,0,0,0,0,0,0,0]),\
+            high = np.array([360,360,100,100,100,255,255,255,255,255,255,255,255,255,255]),\
             shape=(input_number,), dtype=np.float32)
 
         # Malmo Params
@@ -259,7 +259,7 @@ class elytraFlyer(gym.Env):
 
     # Process the frame from the observation.
     @staticmethod
-    def process_frame(frame, numColumns = 5, columnWidth = 30):
+    def process_frame(frame, numColumns = 10, columnWidth = 20):
         try:
             view = ImageOps.grayscale(Image.frombytes("RGB", (image_width, image_height), np.array(frame)))
             imageColumns = []
@@ -273,8 +273,7 @@ class elytraFlyer(gym.Env):
                 imageColumns.append(accu / (columnWidth * image_height))
         except ValueError:
             print("image failed")
-            return [0,0,0,0,0]
-        print(imageColumns)
+            return [0]*numColumns
         return imageColumns
         
 
@@ -587,8 +586,8 @@ def get_config(loadPath = ''):
     _config['num_gpus'] = 0
     _config['num_workers'] = 0
     _config['use_critic'] = True
-    _config['model'] = {'custom_model': 'custom_model',
-                        'custom_model_config': {}}
+    # _config['model'] = {'custom_model': 'custom_model',
+    #                     'custom_model_config': {}}
     _config['framework'] = 'torch'
     return _config
 
@@ -628,7 +627,7 @@ def save_checkpoint(trainer):
 
 if __name__ == '__main__':
     loadPath = check_for_loading_model() #must be called first to reset argv for Rllib
-    register_model()
+    #register_model()
     ray.init()
     trainer = ppo.PPOTrainer(env=elytraFlyer, config=get_config(loadPath))
     if loadPath != '':
