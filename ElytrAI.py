@@ -44,7 +44,7 @@ class elytraFlyer(gym.Env):
         self.num_observations = self.video_width * self.video_height
 
         # General constants & flags
-        self.move_mult = 50
+        self.max_move = 100
         self.pillar_touch_flag = .5452
         self.step_time_delta = 0.1
 
@@ -59,7 +59,7 @@ class elytraFlyer(gym.Env):
 
         # RLlib Params
         self.action_dict = {0: "Go Left", 1: "Go Right", 2: "Go Up", 3: "Go Down"}
-        self.action_space = Discrete(len(self.action_dict))
+        self.action_space = Box(low=-1.0, high= 1.0, shape=(2,), dtype=np.float32)
         self.observation_space = Box(low = np.array([-360, -360, -100, -100, -100, 0,0,0,0,0,0,0,0,0,0]),\
             high = np.array([360,360,100,100,100,255,255,255,255,255,255,255,255,255,255]),\
             shape=(input_number,), dtype=np.float32)
@@ -215,15 +215,16 @@ class elytraFlyer(gym.Env):
         """
 
         # Send command to move mouse
-        if action == 0:
-            self.agent_host.sendCommand(f"moveMouse -{self.move_mult} 0")
-        elif action == 1:
-            self.agent_host.sendCommand(f"moveMouse {self.move_mult} 0")
-        elif action == 2:
-            self.agent_host.sendCommand(f"moveMouse 0 {self.move_mult}")
-        elif action == 3:
-            self.agent_host.sendCommand(f"moveMouse 0 -{self.move_mult}")
-
+        # if action == 0:
+        #     self.agent_host.sendCommand(f"moveMouse -{self.move_mult} 0")
+        # elif action == 1:
+        #     self.agent_host.sendCommand(f"moveMouse {self.move_mult} 0")
+        # elif action == 2:
+        #     self.agent_host.sendCommand(f"moveMouse 0 {self.move_mult}")
+        # elif action == 3:
+        #     self.agent_host.sendCommand(f"moveMouse 0 -{self.move_mult}")
+        #print("sending action",f"moveMouse {int(action[0]*self.max_move)} {int(action[1]*self.max_move)}")
+        self.agent_host.sendCommand(f"moveMouse {int(action[0]*self.max_move)} {int(action[1]*self.max_move)}")
         # Sleep and increment the episode by one
         time.sleep(self.step_time_delta)
         self.episode_step += 1
