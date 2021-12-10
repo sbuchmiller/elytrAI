@@ -117,6 +117,7 @@ In this test we found that the agent was able to maintain the gains in distance 
 We believe that this is because the basic line of sight observations miss many very important aspects of the problem. Firstly, the agent can only see the block that it is directly looking at. This means that it has no real awareness of its surroundings and might be very close to hitting a pillar, but not see it since it isn’t looking directly at it. Additionally, this method doesn’t allow the agent to remember the block it was looking at in previous steps, so it would often look away from a block then look back at it again later due to its lack of memory.
 
 Finally the observation itself suffered from some inconsistencies due to Malmo. If the agent’s vision wasn’t perfectly aligned to the block, there were times where the block wouldn’t be seen. This led to situations where the agent would not be looking at a pillar, but would still be close enough to collide with it while passing.
+
 <img width="475" alt="Screen Shot 2021-12-10 at 3 00 00 PM" src="https://user-images.githubusercontent.com/36436765/145651805-839dba21-0bf8-41d2-af2d-0eb3511392a4.png">
 
 <img width="512" alt="Screen Shot 2021-12-10 at 3 00 30 PM" src="https://user-images.githubusercontent.com/36436765/145651817-4874c2b4-5962-40fb-8f2b-d5c9dd8271ba.png">
