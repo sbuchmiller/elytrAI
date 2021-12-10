@@ -76,7 +76,7 @@ For our second attempt, we wanted to give the agent more information pertaining 
 
 We then modified the observation to include the ‘field value’ of the agent's current position, as well as the values of the positions one block to its left and right. This was in an attempt to give it information about which direction will give it a higher reward. In the hope that it could use these observations in order to make decisions preemptively about the actions to take instead of just being punished for it. 
 
-<img width="1091" alt="Screen Shot 2021-12-10 at 2 56 42 PM" src="https://user-images.githubusercontent.com/36436765/145651633-70444804-f852-4729-ae45-98f3e7c7c899.png">
+<img width="738" alt="Screen Shot 2021-12-10 at 3 04 26 PM" src="https://user-images.githubusercontent.com/36436765/145652122-19de2e87-f5be-4f09-b6a2-907dd9cfab32.png">
 
 ### VideoProducer all Pixels
 
