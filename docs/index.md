@@ -9,7 +9,7 @@ Reports:
 
 - [Proposal](proposal.md)
 - [Status](status.md)
-- [Final](final.html)
+- [Final](final.md)
 
 ElytrAI is a project created for the project course CS-175 that aims to create an agent capable of learning to fly an elytra in the game Minecraft.
 
